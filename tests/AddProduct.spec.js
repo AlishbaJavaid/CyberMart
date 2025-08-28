@@ -1,6 +1,12 @@
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 
+import path from 'path';
+
+// Helper: resolve image file path
+const imagePath = (filename) => path.join(__dirname, '../test-data/Images', filename);
+
+
 test('Seller login flow + Add Product (with auto-auth)', async ({ browser }) => {
   test.setTimeout(120000); // allow up to 2 mins for manual CAPTCHA
 
@@ -139,24 +145,30 @@ await page.waitForTimeout(2000);
 // Continue to upload images step 
 await page.getByRole('button', { name: 'Next' }).click();
 
-// Open Upload Image 1 section
+// 8 images to upload
+const imageFiles = [
+  '71UAd8cY5NL._AC_SX569_.jpg',
+  '71UZGSrlE5L._AC_SL1500_.jpg',
+  'Media (6).jpg',
+  '71UZGSrlE5L._AC_SL1500_.jpg',
+  '71UZGSrlE5L._AC_SL1500_.jpg',
+  '71UZGSrlE5L._AC_SL1500_.jpg',
+  '71UZGSrlE5L._AC_SL1500_.jpg',
+  'Media (6).jpg',
+].map(file => imagePath(file));
+
+// Step 1: Click "Upload Image 1" (opens sidebar)
 await page.getByRole('button', { name: 'Upload Image 1' }).click();
 
-// Instead of clicking 'browse', directly set the file
-const fileInput = page.locator('input[type="file"]').first();
-await fileInput.setInputFiles([
-  'C:/Users/alish/Downloads/Sample Photos/71UAd8cY5NL._AC_SX569_.jpg',
-  'C:/Users/alish/Downloads/Sample Photos/711NBgU5GEL._AC_SX569_.jpg'
-]);
-
-// Pause 2 seconds so you can see the file selected
-await page.waitForTimeout(2000);
+// Step 2: Attach all 8 files at once to the file input
+const browseInput = page.locator('input[type="file"]').last();
+await browseInput.setInputFiles(imageFiles);
 
 // Proceed with upload
 await page.getByRole('button', { name: 'Proceed to upload' }).click();
 
-// Pause 2 seconds so you can see the upload action
-await page.waitForTimeout(4000);
+// Pause before clicking Next (e.g., 10 seconds)
+await page.waitForTimeout(10000);
 
 // Continue
 await page.getByRole('button', { name: 'Next' }).click();
