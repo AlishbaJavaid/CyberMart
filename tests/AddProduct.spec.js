@@ -150,11 +150,11 @@ const imageFiles = [
   '71UAd8cY5NL._AC_SX569_.jpg',
   '71UZGSrlE5L._AC_SL1500_.jpg',
   'Media (6).jpg',
-  '71UZGSrlE5L._AC_SL1500_.jpg',
-  '71UZGSrlE5L._AC_SL1500_.jpg',
-  '71UZGSrlE5L._AC_SL1500_.jpg',
-  '71UZGSrlE5L._AC_SL1500_.jpg',
-  'Media (6).jpg',
+  '71haUItpcKL._SL1500_.jpg',
+  'Media (5).jpg',
+  '7197LHi3pjL._AC_SL1500_.jpg',
+  '817UJvB1BrL._SL1500_.jpg',
+  'Media (7).jpg',
 ].map(file => imagePath(file));
 
 // Step 1: Click "Upload Image 1" (opens sidebar)
