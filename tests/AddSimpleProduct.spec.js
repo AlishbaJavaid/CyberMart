@@ -252,7 +252,7 @@ await page.waitForTimeout(1000);
 
 // Go next
 await page.getByRole('button', { name: 'Next' }).click();
-await page.waitForTimeout(2000);
+await page.waitForTimeout(1000);
 
 // Select Return Days
 await page.getByRole('combobox', { name: 'Select Return Days' }).click();
@@ -358,7 +358,7 @@ await page.waitForTimeout(1000);
 // Final Create button
 await page.getByRole('button', { name: 'Create' }).click();
 
-// ✅ Verify success messages instead of clicking
+// ✅ Verify success message
 await expect(page.getByText('Successfully Submitted')).toBeVisible();
 await expect(page.getByText('Your product has been submitted to CyberMart for approval. Once approved, the product will be successfully added to the inventory')).toBeVisible();
 await expect(page.getByText('To view list,click here')).toBeVisible();

@@ -326,7 +326,7 @@ await page.waitForTimeout(1000);   // pause after applying
 
 // Go next
 await page.getByRole('button', { name: 'Next' }).click();
-await page.waitForTimeout(2000);
+await page.waitForTimeout(1000);
 
 // Select Return Days
 await page.getByRole('combobox', { name: 'Select Return Days' }).click();
