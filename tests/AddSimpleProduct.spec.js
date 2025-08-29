@@ -160,8 +160,30 @@ await page.waitForTimeout(1000);
 // Continue to upload images step 
 await page.getByRole('button', { name: 'Next' }).click();
 
-// 8 images to upload
-const imageFiles = [
+// // 8 images to upload
+// const imageFiles = [
+//   '71UAd8cY5NL._AC_SX569_.jpg',
+//   '71UZGSrlE5L._AC_SL1500_.jpg',
+//   'Media (6).jpg',
+//   '71haUItpcKL._SL1500_.jpg',
+//   'Media (5).jpg',
+//   '7197LHi3pjL._AC_SL1500_.jpg',
+//   '817UJvB1BrL._SL1500_.jpg',
+//   'Media (7).jpg',
+// ].map(file => imagePath(file));
+
+// // Step 1: Click "Upload Image 1" (opens sidebar)
+// await page.getByRole('button', { name: 'Upload Image 1' }).click();
+
+// // Step 2: Attach all 8 files at once to the file input
+// const browseInput = page.locator('input[type="file"]').last();
+// await browseInput.setInputFiles(imageFiles);
+
+// // Proceed with upload
+// await page.getByRole('button', { name: 'Proceed to upload' }).click();
+
+// Pool of images
+const allImageFiles = [
   '71UAd8cY5NL._AC_SX569_.jpg',
   '71UZGSrlE5L._AC_SL1500_.jpg',
   'Media (6).jpg',
@@ -172,14 +194,28 @@ const imageFiles = [
   'Media (7).jpg',
 ].map(file => imagePath(file));
 
+// Function to get random images
+function getRandomImages(min = 3, max = 8) {
+  // Pick random count between min and max
+  const count = Math.floor(Math.random() * (max - min + 1)) + min;
+
+  // Shuffle images and pick "count" number
+  const shuffled = [...allImageFiles].sort(() => 0.5 - Math.random());
+  return shuffled.slice(0, count);
+}
+
+// Generate random set of images
+//const imageFiles = getRandomImages(3, 8); // will pick between 3 and 8 images
+const imageFiles = getRandomImages(2, 2); // always 2 images
+
 // Step 1: Click "Upload Image 1" (opens sidebar)
 await page.getByRole('button', { name: 'Upload Image 1' }).click();
 
-// Step 2: Attach all 8 files at once to the file input
+// Step 2: Attach selected random files
 const browseInput = page.locator('input[type="file"]').last();
 await browseInput.setInputFiles(imageFiles);
 
-// Proceed with upload
+// Step 3: Proceed with upload
 await page.getByRole('button', { name: 'Proceed to upload' }).click();
 
 // Pause
@@ -279,7 +315,6 @@ await page.waitForTimeout(1000);
 
 // Radio: No
 await page.getByRole('radio', { name: 'No', exact: true }).check();
-await page.waitForTimeout(1000);
 
 // Next button
 await page.getByRole('button', { name: 'Next' }).click();
