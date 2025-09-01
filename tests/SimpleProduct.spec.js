@@ -409,7 +409,6 @@ await page.waitForTimeout(1000);
 // Fill warranty policy
 await page.getByRole('textbox', { name: 'Warranty Policy *' }).click();
 await page.getByRole('textbox', { name: 'Warranty Policy *' }).fill('Testing Warranty Policy');
-await page.waitForTimeout(1000);
 
 // Radio: No
 await page.getByRole('radio', { name: 'No', exact: true }).check();

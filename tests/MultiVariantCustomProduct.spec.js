@@ -71,18 +71,27 @@ async function approveProductByProductName(browser, randomProductName) {
   await approveBtn.click();
   await approveBtn.click(); // confirm
   
-  // Click on the text "View all variants"
+    // Wait for search results table and at least one row
+  const resultsTable = adminPage.locator('table:has-text("Product Name")');
+  await expect(resultsTable).toBeVisible({ timeout: 10000 });
+
+  const firstRow = resultsTable.locator('tr').nth(1); // skip header row
+  await expect(firstRow).toBeVisible({ timeout: 10000 });
+
+  // Locate the 'View all variations' button
   const viewVariantsBtn = adminPage.getByText('View all variations').first();
   await expect(viewVariantsBtn).toBeVisible({ timeout: 10000 });
   await viewVariantsBtn.click();
-  await adminPage.waitForTimeout(2000); // allow table to expand
 
-  // Wait for product status to become Active
-  const statusCell = adminPage.getByRole('cell', { name: 'Active' });
-  await expect(statusCell).toBeVisible({ timeout: 40000 });
+  // Wait for the child rows to appear
+  const activeRowSelector = `tr:has-text("${randomProductName}"):has-text("Active")`;
+  await adminPage.waitForSelector(activeRowSelector, { timeout: 10000 });
 
-  console.log(`✅ Product [${randomProductName}] approved successfully by Admin`);
-}
+  // Locate the active row for the product (first match)
+  const activeRow = adminPage.locator(`tr:has-text("${randomProductName}"):has-text("Active")`).first();
+  await expect(activeRow).toBeVisible({ timeout: 30000 });
+
+  console.log(`✅ Product [${randomProductName}] approved successfully by Admin`);}
 
 ///////////////////////
 
@@ -472,7 +481,6 @@ await page.waitForTimeout(1000);
 // Fill warranty policy
 await page.getByRole('textbox', { name: 'Warranty Policy *' }).click();
 await page.getByRole('textbox', { name: 'Warranty Policy *' }).fill('Testing Warranty Policy');
-await page.waitForTimeout(1000);
 
 //// Customizable Product /////
 // Front side image
