@@ -1,0 +1,52 @@
+{
+  "cookies": [
+    {
+      "name": "_GRECAPTCHA",
+      "value": "09ANMylNCDBBNOn9j18kZqRQN5n-1P9yPxWHBURi5RXKgcqfvKk2sfIUEK99LmljySrH-q9CmlUCuYFRy8THgxZLw",
+      "domain": "www.google.com",
+      "path": "/recaptcha",
+      "expires": 1772258723.671586,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "tokenAdmin",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTI4MiwiZW1haWwiOiJhZG1pbkBjeWJlcm1hcnQuY29tIiwicGhvbmUiOiIwMzAwNzg1NTU1MSIsInJvbGVzIjpbeyJpZCI6MSwibmFtZSI6ImFkbWluIn1dLCJwYXJlbnQiOm51bGwsInVzZXJUeXBlIjoiYnV5ZXIiLCJpYXQiOjE3NTY3MDY3MjYsImV4cCI6MTc1Njc5MzEyNn0.P3bEISIRfkSZNnHMP0Z0Q0CVqedThx2GYVyGEAR8oK0",
+      "domain": "qaadminv2.cybermart.com",
+      "path": "/",
+      "expires": 1759298727.000949,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Strict"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "https://qaadminv2.cybermart.com",
+      "localStorage": [
+        {
+          "name": "_grecaptcha",
+          "value": "09ANMylNAcjqZOH6EUTDPmoL9uQUq-AwG1C3ejbPsevHnaZSvE-qZo_nYMzSkklBVqB0SKhhL_POS00uzv-E-EJDVgJZrXr75IyEiKbD2EFBaw9vL3Z5f-LqUXZ2o7BkLs"
+        },
+        {
+          "name": "common-store",
+          "value": "{\"state\":{\"userProfileData\":null},\"version\":0}"
+        }
+      ]
+    },
+    {
+      "origin": "https://www.google.com",
+      "localStorage": [
+        {
+          "name": "rc::a",
+          "value": "YXpwZmJ6cHQ3am93"
+        },
+        {
+          "name": "rc::f",
+          "value": "0aAJ3Gg0af4X2jw1Skfzkg1Xc3ZzbGt_t9aBRdSR2HWCSoQGsiv1JQFnD5quXLXQgrKmTzhj0"
+        }
+      ]
+    }
+  ]
+}

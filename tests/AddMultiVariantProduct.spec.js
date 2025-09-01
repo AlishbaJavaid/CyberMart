@@ -1,16 +1,99 @@
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
-
 import path from 'path';
 
 // Helper: resolve image file path
 const imagePath = (filename) => path.join(__dirname, '../test-data/Images', filename);
 
+//////////////////////////
+const adminAuthFile = 'admin-auth.json';
+
+// -------- Helper: fresh Admin login --------
+async function adminFreshLogin(browser) {
+  const ctx = await browser.newContext();
+  const pg = await ctx.newPage();
+
+  await pg.goto('https://qaadminv2.cybermart.com/sign-in');
+  await pg.getByTestId('emailOrPhone').fill('admin@cybermart.com');
+  await pg.getByTestId('password').fill('Rizwan@123');
+
+  console.log('⚠️ Solve Admin CAPTCHA manually...');
+  await pg.getByTestId('login-submit').click();
+
+  // Wait until dashboard is visible
+  await expect(pg.getByRole('link', { name: 'Inventory Management' }))
+    .toBeVisible({ timeout: 120000 });
+
+  await ctx.storageState({ path: adminAuthFile });
+  console.log('✅ Admin auth saved');
+  return { context: ctx, page: pg };
+}
+
+// -------- Helper: approve product by Product Name --------
+async function approveProductByProductName(browser, randomProductName) {
+  let adminContext, adminPage;
+
+  if (!fs.existsSync(adminAuthFile)) {
+    ({ context: adminContext, page: adminPage } = await adminFreshLogin(browser));
+  } else {
+    adminContext = await browser.newContext({ storageState: adminAuthFile });
+    adminPage = await adminContext.newPage();
+
+    await adminPage.goto('https://qaadminv2.cybermart.com/dashboard');
+    await adminPage.waitForLoadState('networkidle');
+
+    if (adminPage.url().includes('sign-in') || adminPage.url().includes('login')) {
+      console.log('❌ Admin session expired, re-login...');
+      fs.unlinkSync(adminAuthFile);
+      await adminContext.close();
+      ({ context: adminContext, page: adminPage } = await adminFreshLogin(browser));
+    } else {
+      console.log('✅ Admin logged in with saved session');
+    }
+  }
+
+  // ---- Admin approval flow ----
+  await adminPage.getByRole('link', { name: 'Inventory Management' }).click();
+  await adminPage.getByRole('textbox', { name: 'Search by product name, UPC, CSIN' }).fill(randomProductName);
+  await adminPage.getByRole('button', { name: 'Search' }).click();
+  await adminPage.waitForTimeout(2000);
+
+  const row = adminPage.getByRole('row', { name: new RegExp(randomProductName, 'i') }).first();
+  await expect(row).toBeVisible({ timeout: 30000 });
+
+  await row.getByRole('button', { name: 'icon-button' }).click();
+  await adminPage.waitForTimeout(1000);  // wait to see dropdown
+
+  const reviewItem = adminPage.getByRole('menuitem', { name: 'Review' });
+  await expect(reviewItem).toBeVisible();
+  await reviewItem.click();
+  await adminPage.waitForTimeout(2000);  // wait for review modal to open
+
+  // Wait for review modal → then approve
+  const approveBtn = adminPage.getByRole('button', { name: 'Approve' });
+  await expect(approveBtn).toBeVisible();
+  await approveBtn.click();
+  await approveBtn.click(); // confirm
+  
+  // Click on the text "View all variants"
+  const viewVariantsBtn = adminPage.getByText('View all variations').first();
+  await expect(viewVariantsBtn).toBeVisible({ timeout: 10000 });
+  await viewVariantsBtn.click();
+  await adminPage.waitForTimeout(2000); // allow table to expand
+
+  // Wait for product status to become Active
+  const statusCell = adminPage.getByRole('cell', { name: 'Active' });
+  await expect(statusCell).toBeVisible({ timeout: 40000 });
+
+  console.log(`✅ Product [${randomProductName}] approved successfully by Admin`);
+}
+
+///////////////////////
 
 test('Seller login flow + Add Multi Variant Product (with auto-auth)', async ({ browser }) => {
   test.setTimeout(120000); // allow up to 2 mins for manual CAPTCHA
 
-  const authFile = 'auth.json';
+  const authFile = 'seller-auth.json';
   let context;
   let page;
 
@@ -33,7 +116,7 @@ test('Seller login flow + Add Multi Variant Product (with auto-auth)', async ({ 
 
     // Save session
     await ctx.storageState({ path: authFile });
-    console.log('✅ Authentication saved to auth.json');
+    console.log('✅ Authentication saved to seller-auth.json');
 
     return { context: ctx, page: pg };
   }
@@ -50,7 +133,7 @@ test('Seller login flow + Add Multi Variant Product (with auto-auth)', async ({ 
 
     // Session expired → re-login
     if (page.url().includes('sign-in') || page.url().includes('login')) {
-      console.log('❌ Session expired. Deleting auth.json...');
+      console.log('❌ Session expired. Deleting seller-auth.json...');
       fs.unlinkSync(authFile);
       await context.close();
       ({ context, page } = await freshLogin());
@@ -66,7 +149,7 @@ test('Seller login flow + Add Multi Variant Product (with auto-auth)', async ({ 
 
   // Double check again if redirected
   if (page.url().includes('sign-in') || page.url().includes('login')) {
-    console.log('❌ Session expired while opening Inventory. Deleting auth.json...');
+    console.log('❌ Session expired while opening Inventory. Deleting seller-auth.json...');
     fs.unlinkSync(authFile);
     await context.close();
     ({ context, page } = await freshLogin());
@@ -336,21 +419,22 @@ const tomorrowDate = new Date();
 tomorrowDate.setDate(now.getDate() + 1);
 const tomorrow = tomorrowDate.getDate().toString();
 
-// Start Date = Today
+// Open "Start Date" calendar
 await page.getByRole('button', { name: 'Choose date' }).first().click();
-await page.getByRole('gridcell', { name: promoStartDay }).click();
-await page.waitForTimeout(1000);   // pause after selecting start date
 
-// End Date = Tomorrow
+// Scope inside the Start Date dialog
+const startDialog = page.getByRole('dialog', { name: 'Start Date' });
+await startDialog.getByRole('gridcell', { name: promoStartDay, exact: true }).click();
+await page.waitForTimeout(1000);
+
+// Open "End Date" calendar
 await page.getByRole('button', { name: 'Choose date' }).nth(1).click();
-
-// Handle month change if tomorrow is in the next month
+const endDialog = page.getByRole('dialog', { name: 'End Date' });
 if (tomorrowDate.getMonth() !== now.getMonth()) {
-  await page.getByRole('button', { name: 'Next month' }).click();
+  await endDialog.getByRole('button', { name: 'Next month' }).click();
 }
-
-await page.getByRole('gridcell', { name: tomorrow }).click();
-await page.waitForTimeout(1000);   // pause after selecting end date
+await endDialog.getByRole('gridcell', { name: tomorrow, exact: true }).click();
+await page.waitForTimeout(1000);
 
 // Apply changes to close calendar
 await page.getByRole('button', { name: 'Apply Changes' }).click();
@@ -366,6 +450,13 @@ await page.waitForTimeout(1000);
 await page.getByRole('combobox', { name: 'Select Return Days' }).click();
 await page.getByRole('option', { name: '3 Days' }).click();
 await page.waitForTimeout(1000);
+
+// // Wait until the Return Days combobox is visible
+// const returnDaysDropdown = page.getByRole('combobox', { name: 'Select Return Days' });
+// await expect(returnDaysDropdown).toBeVisible({ timeout: 10000 });
+// await returnDaysDropdown.click();
+// await page.getByRole('option', { name: '3 Days' }).click();
+// await page.waitForTimeout(1000);
 
 // Select radio: Both
 await page.getByRole('radio', { name: 'Both' }).check();
@@ -402,7 +493,6 @@ await page.waitForTimeout(1000);
 
 await page.getByRole('combobox', { name: 'Package Type Flat Rate Boxes' }).nth(1).click();
 await page.getByRole('option', { name: 'Small' }).click();
-await page.waitForTimeout(1000);
 
 await page.getByRole('heading', { name: 'Shipping Handling' }).click();
 await page.getByRole('radio', { name: 'Seller Shipment' }).check();
@@ -472,5 +562,8 @@ await expect(page.getByText('To view list,click here')).toBeVisible();
 
 // If "click here" is an actual link/button → then click it
 await page.getByText('click here').click();
+
+// ✅ Call admin helper
+  await approveProductByProductName(browser, randomProductName);
 
 });
