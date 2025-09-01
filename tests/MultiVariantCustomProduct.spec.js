@@ -2,9 +2,6 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 
-// Helper: resolve image file path
-const imagePath = (filename) => path.join(__dirname, '../test-data/Images', filename);
-
 //////////////////////////
 const adminAuthFile = 'admin-auth.json';
 
@@ -56,8 +53,7 @@ async function approveProductByProductName(browser, randomProductName) {
   await adminPage.getByRole('link', { name: 'Inventory Management' }).click();
   await adminPage.getByRole('textbox', { name: 'Search by product name, UPC, CSIN' }).fill(randomProductName);
   await adminPage.getByRole('button', { name: 'Search' }).click();
-  await adminPage.waitForTimeout(2000);
-
+  await adminPage.locator('table').waitFor({ state: 'visible', timeout: 30000 });
   const row = adminPage.getByRole('row', { name: new RegExp(randomProductName, 'i') }).first();
   await expect(row).toBeVisible({ timeout: 30000 });
 
@@ -161,17 +157,17 @@ test('Seller login flow + Add Multi Variant Product (with auto-auth)', async ({ 
   await page.getByText('Create New Product').click();
 
 // Function to generate random product name
-function getRandomProductName(length = 12) {
+function getRandomProductName(length = 10) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let name = '';
   for (let i = 0; i < length; i++) {
     name += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  return 'Product_' + name; // Prefix to make it clear
+  return 'Custom Product_' + name; // Prefix to make it clear
 }
 
-// Generate a random product name with 12+ characters
-const randomProductName = getRandomProductName(12);
+// Generate a random product name with 10+ characters
+const randomProductName = getRandomProductName(10);
 
 // Fill product name in the input
 await page.getByRole('textbox', { name: 'Enter Product Name *' }).fill(randomProductName);
@@ -265,6 +261,8 @@ await page.getByRole('button', { name: 'Next' }).click();
 // // Proceed with upload
 // await page.getByRole('button', { name: 'Proceed to upload' }).click();
 
+// Helper: resolve image file path
+const imagePath = (filename) => path.join(__dirname, '../test-data/Images', filename);
 // Pool of images
 const allImageFiles = [
   '71UAd8cY5NL._AC_SX569_.jpg',
@@ -476,8 +474,51 @@ await page.getByRole('textbox', { name: 'Warranty Policy *' }).click();
 await page.getByRole('textbox', { name: 'Warranty Policy *' }).fill('Testing Warranty Policy');
 await page.waitForTimeout(1000);
 
-// Radio: No
-await page.getByRole('radio', { name: 'No', exact: true }).check();
+//// Customizable Product /////
+// Front side image
+const frontImage = imagePath('600.png');
+
+// Back side image
+const backImage = imagePath('400 400.png');
+
+// Check front/back side options
+await page.getByRole('heading', { name: 'Customize Product' }).click();
+await page.getByRole('radio', { name: 'Yes' }).check();
+await page.waitForTimeout(1000);
+await page.getByRole('checkbox', { name: 'Front Side' }).check();
+await page.waitForTimeout(1000);
+await page.getByRole('checkbox', { name: 'Back Side' }).check();
+await page.waitForTimeout(1000);
+
+// ---------------- Front Side Upload ----------------
+const frontFileInput = page.locator('input[type="file"]').first();
+await frontFileInput.setInputFiles(frontImage);
+await page.waitForTimeout(1000);
+
+await page.getByRole('checkbox', { name: 'Front Side Upload Image' }).check();
+await page.waitForTimeout(1000);
+await page.getByRole('checkbox', { name: 'Text' }).first().check();
+await page.waitForTimeout(1000);
+await page.getByRole('textbox', { name: 'Text to show *' }).fill('Random Text');
+await page.waitForTimeout(1000);
+await page.getByRole('spinbutton', { name: 'Text character limit *' }).fill('35');
+await page.waitForTimeout(1000);
+
+// ---------------- Back Side Upload ----------------
+const backFileInput = page.locator('input[type="file"]').last();
+await backFileInput.setInputFiles(backImage);
+await page.waitForTimeout(1000);
+
+await page.getByRole('checkbox', { name: 'Back Side Upload Image' }).check();
+await page.waitForTimeout(1000);
+await page.getByRole('checkbox', { name: 'Text' }).nth(2).check();
+await page.waitForTimeout(1000);
+await page.getByRole('textbox', { name: 'Text to show *' }).nth(1).fill('Random Text');
+await page.waitForTimeout(1000);
+await page.getByPlaceholder('fsaf').fill('35');
+await page.waitForTimeout(1000);
+
+//// Customizable Product END/////
 
 // Next button
 await page.getByRole('button', { name: 'Next' }).click();
@@ -553,7 +594,11 @@ for (const tag of randomTags) {
 await page.waitForTimeout(1000);
 
 // Final Create button
-await page.getByRole('button', { name: 'Create' }).click();
+// await page.getByRole('button', { name: 'Create' }).click();
+// OR //
+const createButton = page.getByRole('button', { name: 'Create' });
+await expect(createButton).toBeEnabled(); // or toBeVisible()
+await createButton.click();
 
 // ✅ Verify success messages instead of clicking
 await expect(page.getByText('Successfully Submitted')).toBeVisible();

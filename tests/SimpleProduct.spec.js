@@ -2,9 +2,6 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 
-// Helper: resolve image file path
-const imagePath = (filename) => path.join(__dirname, '../test-data/Images', filename);
-
 //////////////////////////
 const adminAuthFile = 'admin-auth.json';
 
@@ -56,8 +53,7 @@ async function approveProductByProductName(browser, randomProductName) {
   await adminPage.getByRole('link', { name: 'Inventory Management' }).click();
   await adminPage.getByRole('textbox', { name: 'Search by product name, UPC, CSIN' }).fill(randomProductName);
   await adminPage.getByRole('button', { name: 'Search' }).click();
-  await adminPage.waitForTimeout(2000);
-
+  await adminPage.locator('table').waitFor({ state: 'visible', timeout: 30000 });
   const row = adminPage.getByRole('row', { name: new RegExp(randomProductName, 'i') }).first();
   await expect(row).toBeVisible({ timeout: 30000 });
 
@@ -258,6 +254,9 @@ await page.getByRole('button', { name: 'Next' }).click();
 
 // // Proceed with upload
 // await page.getByRole('button', { name: 'Proceed to upload' }).click();
+
+// Helper: resolve image file path
+const imagePath = (filename) => path.join(__dirname, '../test-data/Images', filename);
 
 // Pool of images
 const allImageFiles = [
@@ -489,7 +488,11 @@ for (const tag of randomTags) {
 await page.waitForTimeout(1000);
 
 // Final Create button
-await page.getByRole('button', { name: 'Create' }).click();
+// await page.getByRole('button', { name: 'Create' }).click();
+// OR //
+const createButton = page.getByRole('button', { name: 'Create' });
+await expect(createButton).toBeEnabled(); // or toBeVisible()
+await createButton.click();
 
 // ✅ Verify success message
 await expect(page.getByText('Successfully Submitted')).toBeVisible();
