@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+import fs from 'fs';
+import path from 'path';
 
 function randomString(length) {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -44,39 +46,35 @@ function randomPhoneNumber() {
   return `${area} ${middle} ${last}`;
 }
 
-test('Business account signup flow', async ({ page }) => {
-    // Increase overall test timeout to e.g. 3 minutes
-    test.setTimeout(180000);
+const sellersPath = path.join(__dirname, 'sellers.json');
+const sellers = JSON.parse(fs.readFileSync(sellersPath, 'utf8'));
 
-    await page.goto('https://qav2.cybermart.com/sign-up', {
-    waitUntil: 'domcontentloaded',
-    timeout: 60000, // allow up to 60s for slower test envs
-  });
+// Decide which seller to use (env var OR default to lastSignup)
+const sellerType = process.env.SELLER || 'lastSignup';
+const { email, password } = sellers[sellerType];
 
-  // Assert sign-up form is visible before proceeding
-  await expect(page.getByRole('heading', { name: 'Sign up' })).toBeVisible();
+//npx cross-env SELLER=customSeller npx playwright test tests/sellerstepperflow.spec.js
+//run this command if want to use custom seller, it will take seller email and password from sellers.json file
 
-  // Wait for reCAPTCHA iframe to be present
-  await page.frameLocator('iframe[title="reCAPTCHA"]').locator('span#recaptcha-anchor').waitFor();
-  // email with random suffix
-  const email = randomEmail();
+test('Continue stepper flow with existing user', async ({ page }) => {
+  test.slow(); // gives 3× timeout automatically
+  await page.goto('https://qav2.cybermart.com/sign-in', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+
   await page.getByTestId('emailOrPhone').fill(email);
+  await page.getByTestId('password').fill(password);
 
-  await page.getByTestId('password').fill('Alishba@123');
-  await page.getByTestId('confirmPassword').fill('Alishba@123');
+  console.log(`🔑 Using seller: ${sellerType} (${email})`);
 
-// ReCAPTCHA (manual)
-console.log('⚠️ Please solve the reCAPTCHA manually...');
+  console.log('⚠️ Please solve reCAPTCHA manually for signin...');
+  await page.waitForFunction(() => {
+    const el = document.querySelector('textarea[name="g-recaptcha-response"]');
+    return el && el.value.length > 0;
+  }, { timeout: 180000 });
+  console.log('✅ reCAPTCHA solved.');
 
-// Wait until reCAPTCHA response is filled
-await page.waitForFunction(() => {
-  const el = document.querySelector('textarea[name="g-recaptcha-response"]');
-  return el && el.value.length > 0;
-}, { timeout: 180000 }); // wait up to 3 minutes
-
-console.log('✅ reCAPTCHA solved, continuing...');
-
-await page.getByTestId('signup-submit').click();
+  await page.getByTestId('signin-submit').click();
 
   // OTP verification
   await page.getByRole('textbox', { name: 'Enter OTP *' }).fill('123456');
