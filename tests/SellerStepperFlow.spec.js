@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, chromium } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 
@@ -22,45 +22,101 @@ const sellers = JSON.parse(fs.readFileSync(sellersPath, 'utf8'));
 const sellerType = process.env.SELLER || 'lastSignup';
 const { email, password } = sellers[sellerType];
 
-//npx cross-env SELLER=customSeller npx playwright test tests/sellerstepperflow.spec.js --headed
-//run this command if want to use custom seller, it will take seller email and password from sellers.json file
+const storagePath = path.join(__dirname, `${sellerType}-storage.json`);
 
-test('Continue stepper flow with existing user', async ({ page }) => {
-  test.slow(); // gives 3× timeout automatically
-  await page.goto('https://qav2.cybermart.com/sign-in', { waitUntil: 'domcontentloaded' });
+// --- Helper for safe "Save and Next" navigation ---
+async function saveAndNext(page, nextStepHeading) {
+  const saveBtn = page.getByRole('button', { name: 'Save and Next' });
 
-  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  await expect(saveBtn).toBeVisible({ timeout: 30000 });
+  await expect(saveBtn).toBeEnabled({ timeout: 30000 });
 
-  await page.getByTestId('emailOrPhone').fill(email);
-  await page.getByTestId('password').fill(password);
+  await saveBtn.click({ force: true });
 
-  console.log(`🔑 Using seller: ${sellerType} (${email})`);
-
-  console.log('⚠️ Please solve reCAPTCHA manually for signin...');
-  await page.waitForFunction(() => {
-    const el = document.querySelector('textarea[name="g-recaptcha-response"]');
-    return el && el.value.length > 0;
-  }, { timeout: 180000 });
-  console.log('✅ reCAPTCHA solved.');
-
-  await page.getByTestId('signin-submit').click();
-
-// ✅ Conditional OTP verification
-const otpField = page.getByRole('textbox', { name: 'Enter OTP *' });
-if (await otpField.isVisible({ timeout: 5000 }).catch(() => false)) {
-  console.log('📩 OTP required, entering code...');
-  await otpField.fill('123456');
-  await page.getByRole('button', { name: 'Verify' }).click();
-  await page.getByRole('button', { name: "Let's Start" }).click();
-} else {
-  console.log('✅ No OTP required, continuing flow...');
+  if (nextStepHeading) {
+    await expect(
+      page.getByRole('heading', { name: nextStepHeading })
+    ).toBeVisible({ timeout: 60000 });
+  } else {
+    await page.waitForURL(/stepper|dashboard/, { timeout: 60000 });
+  }
 }
 
-// ✅ Detect where the seller landed after signin
+// Run: npx cross-env SELLER=customSeller npx playwright test tests/sellerstepperflow.spec.js --headed
+test('Continue stepper flow with existing user', async () => {
+  test.setTimeout(5 * 60 * 1000);
+  test.slow();
+
+  let context;
+  let page;
+
+  // --- Use saved session if exists ---
+  if (fs.existsSync(storagePath)) {
+    console.log(`🔑 Using saved session for seller: ${sellerType}`);
+    context = await chromium.launchPersistentContext('', { storageState: storagePath, headless: false });
+    page = await context.newPage();
+    await page.goto('https://seller.cybermart.com/sign-in');
+  } else {
+    console.log(`⚠️ No saved session found, login required`);
+    context = await chromium.launchPersistentContext('', { headless: false });
+    page = await context.newPage();
+    await page.goto('https://seller.cybermart.com/sign-in', { waitUntil: 'domcontentloaded', timeout: 180000 });
+
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+    await expect(page.getByTestId('emailOrPhone')).toBeVisible();
+    await expect(page.getByTestId('password')).toBeVisible();
+
+    // --- Manual reCAPTCHA solve ---
+    console.log('⚠️ Solve reCAPTCHA manually...');
+    await expect(page.locator('textarea[name="g-recaptcha-response"]'))
+      .toHaveValue(/.+/, { timeout: 180000 });
+    console.log('✅ reCAPTCHA solved.');
+
+    await page.getByTestId('emailOrPhone').fill(email);
+    await page.getByTestId('password').fill(password);
+    console.log(`🔑 Logging in with seller: ${sellerType} (${email})`);
+
+    await page.getByRole('button', { name: 'Continue' }).click();
+
+    // Save session for future runs
+    await context.storageState({ path: storagePath });
+    console.log(`💾 Seller session saved to: ${storagePath}`);
+  }
+
+  // --- Wait for any stepper heading to appear ---
+  await expect(
+    page.getByRole('heading', {
+      name: /Account Type|Business Information|Primary Contact Information|Billing|Store|Verification/,
+    })
+  ).toBeVisible({ timeout: 180000 });
+
+  console.log(`✅ Landed on: ${page.url()}`);
+
+  // OTP step (if shown)
+  const otpField = page.getByRole('textbox', { name: 'Enter OTP *' });
+  if (await otpField.isVisible().catch(() => false)) {
+    console.log('📩 OTP required, entering code...');
+    await otpField.fill('123456');
+    await page.getByRole('button', { name: 'Verify' }).click();
+    await page.getByRole('button', { name: "Let's Start" }).click();
+  }
+
+  // --- Handle Welcome page ---
+  if (page.url().includes('/welcome')) {
+    console.log('👋 Seller landed on Welcome page');
+    await page.getByRole('button', { name: "Let's Start" }).click();
+    await page.waitForURL(/stepper/, { timeout: 60000 });
+    console.log(`➡️ Redirected to stepper: ${page.url()}`);
+  }
+
+  // Detect current step
   const stepperSteps = [
     'Account Type',
-    'Business Info',
-    'Bank Info'
+    'Business Information',
+    'Primary Contact Information',
+    'Billing',
+    'Store',
+    'Verification'
   ];
 
   let currentStep = null;
@@ -77,142 +133,147 @@ if (await otpField.isVisible({ timeout: 5000 }).catch(() => false)) {
     console.log('⚠️ No stepper step detected, might be dashboard or unexpected page.');
   }
 
-  // ✅ Handle each step dynamically
+  // --- Account Type step ---
   if (currentStep === 'Account Type') {
-    // Pause here → Playwright inspector opens, you manually select the option
-    await page.waitForTimeout(60000); // let tester pick Own Business manually
-
-    await expect(
-      page.getByText('I confirm my account type are correct, and I understand that this information cannot be changed later.')
-    ).toBeVisible();
-
+    console.log('⚙️ Handling Account Type step...');
+    await page.locator('div').filter({ hasText: /^PrivatelyOwn Business$/ }).first().click();
+    await page.getByRole('heading', { name: 'Business Account' }).click();
     await page.getByRole('checkbox').check();
     await page.getByRole('button', { name: 'Agree and Continue' }).click();
+    console.log('✅ Account Type step completed');
   }
 
-  if (currentStep === 'Business Info') {
-    // Wait for Business Info step to be visible
-  await expect(page.getByRole('heading', { name: 'Business Info' })).toBeVisible();
-  // Business Info
-  function randomBusinessName() {
-  return `Business-${randomString(10)}`;
-}
-  await page.getByRole('textbox', { name: 'Business Name *' }).fill(randomBusinessName());
-  await page.getByRole('textbox', { name: 'Company Registration Number *' }).fill(randomDigits(8));
-  await page.getByRole('textbox', { name: 'Address Line 1 *' }).fill('Registered business address 1');
-  await page.getByRole('textbox', { name: 'Address Line 2' }).fill('Registered business address 2');
-  await page.getByRole('textbox', { name: 'City/Town *' }).fill('CO');
-  await page.getByRole('combobox', { name: 'State/Region' }).first().click();
-  await page.getByRole('option').nth(1).click(); // random pick
-  await page.getByRole('textbox', { name: 'ZIP/Postal Code *' }).fill('06001');
-  await page.getByRole('button', { name: 'Save and Next' }).click();
+  // --- Business Information step ---
+  if (currentStep === 'Business Information') {
+    console.log('📝 Filling Business Information step...');
+    await expect(page.getByRole('heading', { name: 'Business Information' })).toBeVisible();
 
-  function randomName() {
-  return randomString(Math.floor(Math.random() * 10) + 3); // 3–12 chars
-}
-  // Personal Info
-  await page.getByRole('textbox', { name: 'First Name *' }).fill(randomName());
-  await page.getByRole('textbox', { name: 'Middle Name' }).fill(randomName());
-  await page.getByRole('textbox', { name: 'Last Name *' }).fill(randomName());
+    const stateZipMap = {
+      Alaska: ['99501', '99502', '99503'],
+      California: ['90001', '94105', '95814'],
+      NewYork: ['10001', '11201', '14604'],
+      Texas: ['73301', '75001', '77001'],
+      Florida: ['33101', '32801', '32202']
+    };
 
-  await page.locator('#demo-simple-select').first().click();
-  await page.getByRole('option').nth(2).click(); // random country
-  await page.getByRole('textbox', { name: 'EIN/TIN *' }).fill(randomDigits(Math.floor(Math.random() * 9) + 1));
+    const states = Object.keys(stateZipMap);
+    const randomState = states[Math.floor(Math.random() * states.length)];
+    const zips = stateZipMap[randomState];
+    const randomZip = zips[Math.floor(Math.random() * zips.length)];
 
-  await page.locator('div:nth-child(4) > .MuiInputBase-root > #demo-simple-select').click();
-  await page.getByRole('option').nth(3).click();
+    await page.getByLabel('Business Name *').fill(`Business-${randomString(6)}`);
+    await page.getByLabel('Company Registration Number *').fill(randomDigits(8));
+    await page.getByLabel('Address Line 1 *').fill('123 Main Street');
+    await page.getByLabel('City/Town *').fill('Demo City');
+    await page.getByRole('combobox', { name: 'State/Region' }).selectOption(randomState);
+    await page.getByLabel('ZIP/Postal Code *').fill(randomZip);
 
-  function randomDOB() {
-  const today = new Date();
-  const latestAllowed = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate());
-  const earliestAllowed = new Date(today.getFullYear() - 80, today.getMonth(), today.getDate());
-  return new Date(
-    earliestAllowed.getTime() +
-      Math.random() * (latestAllowed.getTime() - earliestAllowed.getTime())
-  );
-}
+    await saveAndNext(page, 'Seller Information');
+  }
 
-const dob = randomDOB();
-console.log(`📅 DOB chosen: ${dob.toDateString()}`);
+  // --- Primary Contact Information step ---
+  if (currentStep === 'Primary Contact Information') {
+    console.log('📝 Filling Seller Information / PCI step...');
+    
+    function randomPCIName() {
+      const firstNames = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve'];
+      const lastNames = ['Smith', 'Johnson', 'Brown', 'Taylor', 'Lee'];
+      return {
+        first: firstNames[Math.floor(Math.random() * firstNames.length)],
+        last: lastNames[Math.floor(Math.random() * lastNames.length)]
+      };
+    }
+    const pci = randomPCIName();
+    await page.getByRole('textbox', { name: 'First Name *' }).fill(pci.first);
+    await page.getByRole('textbox', { name: 'Last Name *' }).fill(pci.last);
 
-// Open the datepicker
+    await page.locator('#demo-simple-select').first().click();
+    await page.getByRole('option').nth(2).click();
+
+    await page.getByRole('textbox', { name: 'EIN/TIN' }).fill(randomDigits(9));
+
+    const countries = ['Albania', 'Algeria', 'United States', 'Canada', 'Germany', 'France', 'India'];
+    const randomCountry = countries[Math.floor(Math.random() * countries.length)];
+    await page.locator('div:nth-child(4) > .MuiInputBase-root > #demo-simple-select').first().click();
+    await page.getByRole('option', { name: randomCountry }).click();
+
+    function randomDOB() {
+      const today = new Date();
+      const latest = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate());
+      const earliest = new Date(today.getFullYear() - 80, today.getMonth(), today.getDate());
+      return new Date(earliest.getTime() + Math.random() * (latest.getTime() - earliest.getTime()));
+    }
+    const dob = randomDOB();
+
+    // Open DOB picker
 await page.getByRole('button', { name: 'Choose date' }).first().click();
 
-// Open year picker
-await page.getByRole('button', { name: /switch to year view/i }).click();
+// Switch to year view
+await page.locator('button.MuiPickersCalendarHeader-switchViewButton').click();
 
-// Pick the correct year
-await page.getByRole('option', { name: String(dob.getFullYear()) }).click();
+// Select the year
+await page.getByText(String(dob.getFullYear()), { exact: true }).click({ force: true });
+await page.locator('button.MuiPickersCalendarHeader-switchViewButton').click();
 
-// Pick the correct month
-await page.getByRole('option', { name: dob.toLocaleString('default', { month: 'long' }) }).click();
+// Switch back to month/day view
+await page.locator('button.MuiPickersCalendarHeader-switchViewButton').click();
 
-// Pick the correct day
-await page.getByRole('gridcell', { name: String(dob.getDate()) }).click();
+// Select month
+await page.getByRole('gridcell', { name: dob.toLocaleString('default', { month: 'long' }) }).first().click();
 
-  // Driving License
-  await page.getByRole('textbox', { name: 'Driving License *' }).fill('DL' + randomString(6));
+// Select day
+await page.getByRole('gridcell', { name: String(dob.getDate()) }).first().click();
 
-  function randomExpiryDate() {
-  const today = new Date();
-  const minDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7);
-  return new Date(
-    minDate.getTime() +
-      Math.random() * (365 * 24 * 60 * 60 * 1000) // within next year
-  );
-}
 
-const expiry = randomExpiryDate();
-console.log(`📅 Expiry chosen: ${expiry.toDateString()}`);
+    await page.getByRole('textbox', { name: 'Driving License *' }).fill('DL' + randomString(6));
 
-// Open datepicker
-await page.getByRole('button', { name: 'Choose date', exact: true }).click();
+    function randomFutureDate(minDaysAhead = 7, maxYearsAhead = 5) {
+      const today = new Date();
+      const minDate = new Date(today.getTime() + minDaysAhead * 24 * 60 * 60 * 1000);
+      const maxDate = new Date(today.getFullYear() + maxYearsAhead, today.getMonth(), today.getDate());
+      return new Date(minDate.getTime() + Math.random() * (maxDate.getTime() - minDate.getTime()));
+    }
+    const expiry = randomFutureDate();
+    await page.getByRole('button', { name: 'Choose date', exact: true }).click();
+    await page.getByRole('option', { name: String(expiry.getFullYear()) }).click();
+    await page.getByText(expiry.toLocaleString('default', { month: 'long' })).click();
+    await page.getByRole('gridcell', { name: String(expiry.getDate()) }).first().click();
 
-// Navigate to correct year/month
-await page.getByRole('button', { name: /switch to year view/i }).click();
-await page.getByRole('option', { name: String(expiry.getFullYear()) }).click();
-await page.getByRole('option', { name: expiry.toLocaleString('default', { month: 'long' }) }).click();
+    await page.getByRole('textbox', { name: 'Mobile Number *' }).fill('1234567890');
 
-// Pick the correct day
-await page.getByRole('gridcell', { name: String(expiry.getDate()) }).click();
+    const stateZipMap = {
+      Alaska: ['99501', '99502', '99503'],
+      California: ['90001', '94105', '95814'],
+      NewYork: ['10001', '11201', '14604'],
+      Texas: ['73301', '75001', '77001'],
+      Florida: ['33101', '32801', '32202']
+    };
+    const states = Object.keys(stateZipMap);
+    const randomState = states[Math.floor(Math.random() * states.length)];
+    const zips = stateZipMap[randomState];
+    const randomZip = zips[Math.floor(Math.random() * zips.length)];
 
-// OR via datepicker
-await page.getByRole('button', { name: 'Choose date', exact: true }).click();
-await page.getByRole('gridcell', { name: String(expiry.getDate()) }).click();
+    await page.getByRole('textbox', { name: 'Address Line 1 *' }).fill('Business residential address 1');
+    await page.getByRole('textbox', { name: 'Address Line 2' }).fill('Business residential address 2');
+    await page.getByRole('textbox', { name: 'City/Town *' }).fill('Demo City');
+    await page.getByRole('combobox', { name: 'State/Region' }).selectOption(randomState);
+    await page.getByRole('textbox', { name: 'ZIP/Postal Code *' }).fill(randomZip);
 
-function randomPhoneNumber() {
-  const areaCodes = ['252', '305', '415', '646', '213'];
-  const area = areaCodes[Math.floor(Math.random() * areaCodes.length)];
-  let middle = Math.floor(Math.random() * 900 + 100).toString();
-  let last = Math.floor(Math.random() * 9000 + 1000).toString(); // ensures not starting/ending 0
-  return `${area} ${middle} ${last}`;
-}
-  // Phone number
-  await page.getByRole('textbox', { name: 'Mobile Number *' }).fill(randomPhoneNumber());
-
-  await page.getByRole('textbox', { name: 'Address Line 1 *' }).fill('Business residential address 1');
-  await page.getByRole('textbox', { name: 'Address Line 2' }).fill('Business residential address 2');
-  await page.getByRole('textbox', { name: 'City/Town *' }).fill('MA');
-  await page.locator('.space-y-3 > .grid > div:nth-child(4) > .MuiInputBase-root > #demo-simple-select').click();
-  await page.getByRole('option').nth(1).click();
-  await page.getByRole('textbox', { name: 'ZIP/Postal Code *' }).fill('03901');
-  await page.getByRole('button', { name: 'Save and Next' }).click();
-
-  await page.getByRole('textbox', { name: 'Enter OTP *' }).fill('123456');
-  await page.getByRole('button', { name: 'Verify' }).click();
+    await saveAndNext(page, 'Billing');
   }
 
-  if (currentStep === 'Bank Info') {
-    // Bank Info
-  await page.getByRole('combobox', { name: 'Select Bank' }).click();
-  await page.getByRole('option').nth(2).click();
+  // --- Billing step ---
+  if (currentStep === 'Billing') {
+    await page.getByRole('combobox', { name: 'Select Bank' }).click();
+    await page.getByRole('option').nth(2).click();
 
-  const accountNumber = randomDigits(Math.floor(Math.random() * 3) + 10); // 10–12 digits
-  await page.getByRole('textbox', { name: 'Digit Routing Number *' }).fill('021000021');
-  await page.getByRole('textbox', { name: 'Account Number *', exact: true }).fill(accountNumber);
-  await page.getByRole('textbox', { name: 'Re-enter Bank Account Number *' }).fill(accountNumber);
+    const accountNumber = randomDigits(Math.floor(Math.random() * 3) + 10);
+    await page.getByRole('textbox', { name: 'Digit Routing Number *' }).fill('021000021');
+    await page.getByRole('textbox', { name: 'Account Number *', exact: true }).fill(accountNumber);
+    await page.getByRole('textbox', { name: 'Re-enter Bank Account Number *' }).fill(accountNumber);
 
-  await page.getByRole('button', { name: 'Save and Next' }).click();
+    await saveAndNext(page, 'Store');
   }
-  
+
+  // --- Store & Verification steps can remain as is ---
 });

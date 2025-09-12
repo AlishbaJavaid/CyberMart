@@ -1,0 +1,70 @@
+{
+  "cookies": [
+    {
+      "name": "cee",
+      "value": "s7%2BuknEEVPw60bo7%2BwjpV%2Fp7LnwkPz4tAN76oNX5uQo%3D.%7B%7D",
+      "domain": ".mpc-prod-4-1053047382554.us-central1.run.app",
+      "path": "/events/77f7077b50e01f354797cc53de658a61fc0ebc506d3e45b22fa4dbd2110bfd00",
+      "expires": 1765466892.463864,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "_GRECAPTCHA",
+      "value": "09ANMylNDKUphUWcJAHHmQkDVyF_j0YssM5wHiOvK-xDqHyC_YXffQbHrsfVuQnIv7-yIt9ItKyrx4UNlm1d5MUjQ",
+      "domain": "www.google.com",
+      "path": "/recaptcha",
+      "expires": 1773242897.421926,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "_fbp",
+      "value": "fb.1.1757690885041.279787941226532915",
+      "domain": ".cybermart.com",
+      "path": "/",
+      "expires": 1765466922,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "https://seller.cybermart.com",
+      "localStorage": [
+        {
+          "name": "lastExternalReferrer",
+          "value": "empty"
+        },
+        {
+          "name": "lastExternalReferrerTime",
+          "value": "1757690885007"
+        },
+        {
+          "name": "_grecaptcha",
+          "value": "09ANMylNAWJDxqZzN7Vf9p5vfSWq2DcHkzZUL1VGdWTqjZfANTNerhxuYBXZNU9tw7G1O7lCyZAsWSISM--8ux-qbzn-Pygc5iGgCYRNaFwkDNjjLjJepQ0G5pYY1g2J2L"
+        },
+        {
+          "name": "topicsLastReferenceTime",
+          "value": "1757690922210"
+        }
+      ]
+    },
+    {
+      "origin": "https://www.google.com",
+      "localStorage": [
+        {
+          "name": "rc::a",
+          "value": "MXkxZmdqZXJhaXJucw=="
+        },
+        {
+          "name": "rc::f",
+          "value": "0aAFtxy5iw4jW3wF-OnD9LCxXz3Tp5yAMfVjwT4jcYxUsGMreL-JzCAU7BowjeQWzi5RCzIO4"
+        }
+      ]
+    }
+  ]
+}
