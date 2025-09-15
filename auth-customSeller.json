@@ -1,0 +1,48 @@
+{
+  "cookies": [
+    {
+      "name": "_GRECAPTCHA",
+      "value": "09ANMylNDHIt2upWbMNiCwKq1Rr3MtmNyQdvb2xDjJHNkAIhj2p22OYR1BadVSVDdLZgEu0QHVXM6fE6dCgAIN7DY",
+      "domain": "www.google.com",
+      "path": "/recaptcha",
+      "expires": 1773490334.903838,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "token",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NTM3NiwiZW1haWwiOiJhbGlzaGJhKzFjaGVja0BjeWJlcm1hcnQuY29tIiwicGhvbmUiOm51bGwsInJvbGVzIjpbeyJpZCI6MiwibmFtZSI6InNlbGxlciJ9LHsiaWQiOjMsIm5hbWUiOiJidXllciJ9XSwicGFyZW50IjpudWxsLCJ1c2VyVHlwZSI6InNlbGxlciIsImlhdCI6MTc1NzkzODQwMSwiZXhwIjoxNzU4MDI0ODAxfQ.LXJO_vKP4jDz_v1jyLDVTv7F8EpjMBHwvRM60otOv3k",
+      "domain": "qav2.cybermart.com",
+      "path": "/",
+      "expires": 1760530400.755977,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Strict"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "https://qav2.cybermart.com",
+      "localStorage": [
+        {
+          "name": "_grecaptcha",
+          "value": "09ANMylNAk-_BDV-lMJdWxEXYJvJ_1hzhNJi5qpGNnGZi3aJshLGtY2fohGEwi0PESkAqW7-R7UWwdqL0q98H0XPpDJwDTUN-zpI2tzxVnLbov_x4SCFQPRzejaL2-Fdqo"
+        }
+      ]
+    },
+    {
+      "origin": "https://www.google.com",
+      "localStorage": [
+        {
+          "name": "rc::a",
+          "value": "MTFwaDh5bjFqODJhdjc="
+        },
+        {
+          "name": "rc::f",
+          "value": "0aAFtxy5jrQ4oYlLzZc2zNHbrNgNyEsgQ7JGQo9eLlyVUjJI-sb3_3P8mpnbhPEICna-4qwsg"
+        }
+      ]
+    }
+  ]
+}
