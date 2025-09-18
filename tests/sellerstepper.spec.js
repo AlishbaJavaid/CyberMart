@@ -15,6 +15,7 @@ function randomDigits(length) {
 // --- State/ZIP mapping (shared) ---
 const stateZipMap = {
   'Alaska': ['99501', '99501', '99501'],
+  'Maine': ['03901'],
 //   'California': ['90001', '94105', '95814'],
 //   'New York': ['10001', '11201', '14604'],
 //   'Texas': ['73301', '75001', '77001'],
@@ -28,24 +29,67 @@ const sellers = JSON.parse(fs.readFileSync(sellersPath, 'utf8'));
 const sellerType = process.env.SELLER || 'lastSignup';
 const { email, password } = sellers[sellerType];
 
-/// --- Save & Next helper (with retries) ---
-async function saveAndNext(page, nextStepHeading) {
+// /// --- Save & Next helper (with retries + debug logs) ---
+// async function saveAndNext(page, nextStepHeading) {
+//   const saveBtn = page.getByRole('button', { name: /Continue|Save/i });
+//   await expect(saveBtn).toBeEnabled({ timeout: 30000 });
+
+//   const maxRetries = 3;
+//   for (let attempt = 1; attempt <= maxRetries; attempt++) {
+//     console.log(`🖱️ Clicking "Save and Next" (attempt ${attempt})...`);
+//     await saveBtn.click({ force: true });
+
+//     // wait a little before checking
+//     await page.waitForTimeout(1500);
+
+//     const currentStep = await detectStep(page);
+//     console.log(`🔎 After click → Expected: ${nextStepHeading}, Detected: ${currentStep}`);
+
+//     if (currentStep === nextStepHeading) {
+//       console.log(`✅ Step advanced to ${nextStepHeading}`);
+//       return;
+//     }
+
+//     console.log(`⚠️ Still on ${currentStep}, retrying...`);
+//   }
+
+//   throw new Error(`❌ Could not advance to step: ${nextStepHeading}`);
+// }
+/// --- Save & Next helper (with retries + OTP handling + debug logs) ---
+async function saveAndNext(page, nextStepHeading, needsOTP = false) {
   const saveBtn = page.getByRole('button', { name: /Continue|Save/i });
   await expect(saveBtn).toBeEnabled({ timeout: 30000 });
 
   const maxRetries = 3;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    console.log(`🖱️ Clicking "Save and Next" (attempt ${attempt})...`);
     await saveBtn.click({ force: true });
-    
+
+    // Wait briefly for possible popup or navigation
+    await page.waitForTimeout(1500);
+
+    // --- Handle OTP if required ---
+    if (needsOTP) {
+      const otpBox = page.getByRole('textbox', { name: 'Enter OTP *' });
+      if (await otpBox.isVisible()) {
+        console.log(`🔐 OTP popup detected, entering code...`);
+        await otpBox.fill('123456');
+        await page.getByRole('button', { name: 'Verify' }).click();
+        await expect(otpBox).toHaveCount(0, { timeout: 15000 });
+        console.log(`✅ OTP verified successfully`);
+      }
+    }
+
+    // --- Detect step after handling OTP ---
     const currentStep = await detectStep(page);
-    
+    console.log(`🔎 After click → Expected: ${nextStepHeading}, Detected: ${currentStep}`);
+
     if (currentStep === nextStepHeading) {
       console.log(`✅ Step advanced to ${nextStepHeading}`);
       return;
     }
 
-    console.log(`⚠️ Attempt ${attempt}: still on ${currentStep}, retrying...`);
-    await page.waitForTimeout(1000); // wait a bit before retry
+    console.log(`⚠️ Still on ${currentStep}, retrying...`);
   }
 
   throw new Error(`❌ Could not advance to step: ${nextStepHeading}`);
@@ -93,22 +137,25 @@ async function freshLogin(browser) {
 
 // --- Step detection ---
 async function detectStep(page) {
-  if (await page.getByRole('heading', { level: 6, hasText: /Account Type/i }).isVisible().catch(() => false)) {
+  // wait until at least one step heading is visible
+  await page.getByRole('heading', { level: 6 }).first().waitFor({ timeout: 10000 });
+
+  if (await page.getByRole('heading', { level: 6, name: /Account Type/i }).isVisible().catch(() => false)) {
     return 'Account Type';
   }
-  if (await page.getByRole('heading', { level: 6, hasText: /Business Information/i }).isVisible().catch(() => false)) {
+  if (await page.getByRole('heading', { level: 6, name: /Business Information/i }).isVisible().catch(() => false)) {
     return 'Business Information';
   }
-  if (await page.getByRole('heading', { level: 6, hasText: /Primary Contact Information/i }).isVisible().catch(() => false)) {
+  if (await page.getByRole('heading', { level: 6, name: /Primary Contact Information(\s*\(PCI\))?/i }).isVisible().catch(() => false)) {
     return 'Primary Contact Information';
   }
-  if (await page.getByRole('heading', { level: 6, hasText: /Billing/i }).isVisible().catch(() => false)) {
-    return 'Billing';
-  }
-  if (await page.getByRole('heading', { level: 6, hasText: /Store/i }).isVisible().catch(() => false)) {
+  if (await page.getByRole('heading', { level: 6, name: /Payment Information/i }).isVisible().catch(() => false)) {
+  return 'Payment Information';
+}
+  if (await page.getByRole('heading', { level: 6, name: /Store/i }).isVisible().catch(() => false)) {
     return 'Store';
   }
-  if (await page.getByRole('heading', { level: 6, hasText: /Verification/i }).isVisible().catch(() => false)) {
+  if (await page.getByRole('heading', { level: 6, name: /Verification/i }).isVisible().catch(() => false)) {
     return 'Verification';
   }
 
@@ -150,6 +197,10 @@ async function handleStep(page, step) {
 
     case 'Business Information':
       console.log('📝 Filling Business Information step...');
+      await page.getByLabel('Business Name *').fill(`Business${randomString(6)}`);
+      await page.getByLabel('Company Registration Number *').fill(randomDigits(7));
+      await page.getByLabel('Address Line 1 *').fill('123 Main Street');
+      await page.getByLabel('City/Town *').fill('Demo City');
 
       const statesBI = Object.keys(stateZipMap);
       const randomStateBI = statesBI[Math.floor(Math.random() * statesBI.length)];
@@ -157,11 +208,6 @@ async function handleStep(page, step) {
       const randomZipBI = zipsBI[Math.floor(Math.random() * zipsBI.length)];
 
       console.log(`🌍 Selected State: ${randomStateBI}, ZIP: ${randomZipBI}`);
-
-      await page.getByLabel('Business Name *').fill(`Business${randomString(6)}`);
-      await page.getByLabel('Company Registration Number *').fill(randomDigits(7));
-      await page.getByLabel('Address Line 1 *').fill('123 Main Street');
-      await page.getByLabel('City/Town *').fill('Demo City');
 
       // Locate enabled State/Region combobox
       const stateDropdown = page.locator('div[role="combobox"]:not([aria-disabled="true"])');
@@ -176,7 +222,7 @@ async function handleStep(page, step) {
       break;
 
     case 'Primary Contact Information':
-      console.log('📝 Filling PCI step...');
+      console.log('📝 Filling Seller Information (PCI) step...');
       function randomPCIName() {
         const firstNames = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve'];
         const lastNames = ['Smith', 'Johnson', 'Brown', 'Taylor', 'Lee'];
@@ -191,89 +237,175 @@ async function handleStep(page, step) {
       await page.getByRole('textbox', { name: 'Last Name *' }).fill(pci.last);
       console.log(`📌 PCI Name filled: ${pci.first} ${pci.last}`);
 
-      await page.locator('#demo-simple-select').first().click();
-      await page.getByRole('option').nth(2).click();
+      // 🌍 Shared countries list
+const countries = [
+  'Albania', 'Algeria', 'Pakistan', 'Canada', 'Germany', 'France', 'India'
+];
+      // --- Country of Citizenship ---
+const randomCitizenship = countries[Math.floor(Math.random() * countries.length)];
+console.log(`🌍 Selected Country of Citizenship: ${randomCitizenship}`);
+
+await page.locator('#demo-simple-select').first().click();
+await page.getByRole('option', { name: randomCitizenship }).click();
 
       await page.getByRole('textbox', { name: 'EIN/TIN' }).fill(randomDigits(9));
 
-      const countries = [
-        'Albania', 'Algeria', 'United States', 'Canada', 'Germany', 'France', 'India'
-      ];
+      // --- Country of Birth ---
+const randomBirth = countries[Math.floor(Math.random() * countries.length)];
+console.log(`🌍 Selected Country of Birth: ${randomBirth}`);
 
-      const randomCountry = countries[Math.floor(Math.random() * countries.length)];
-      console.log(`🌍 Selected Country of Birth: ${randomCountry}`);
-
-      await page.locator('div:nth-child(4) > .MuiInputBase-root > #demo-simple-select').first().click();
-      await page.getByRole('option', { name: randomCountry }).click();
+await page.locator('div:nth-child(4) > .MuiInputBase-root > #demo-simple-select').first().click();
+await page.getByRole('option', { name: randomBirth }).click();
 
       function randomDOB() {
-        const today = new Date();
-        const latest = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate());
-        const earliest = new Date(today.getFullYear() - 80, today.getMonth(), today.getDate());
-        return new Date(earliest.getTime() + Math.random() * (latest.getTime() - earliest.getTime()));
-      }
+  const today = new Date();
+  const latest = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate());
+  const earliest = new Date(today.getFullYear() - 80, today.getMonth(), today.getDate());
+  return new Date(earliest.getTime() + Math.random() * (latest.getTime() - earliest.getTime()));
+}
 
-      const dob = randomDOB();
-      console.log(`📅 Selected DOB: ${dob.toDateString()}`);
+const dob = randomDOB();
+console.log(`📅 Selected DOB: ${dob.toDateString()}`);
 
-      await page.getByRole('button', { name: 'Choose date' }).first().click();
-      await page.locator('button.MuiPickersCalendarHeader-switchViewButton').click();
+// 1. Open DOB calendar
+await page.getByRole('button', { name: 'Choose date' }).first().click();
 
-      let currentYear = parseInt(await page.locator('button.MuiPickersYear-root.Mui-selected').textContent());
+// 2. Open year view by clicking current month
+const currentMonth = await page.locator('.MuiPickersCalendarHeader-label').first().innerText();
+await page.getByText(currentMonth).click();
 
-      while (currentYear !== dob.getFullYear()) {
-        if (currentYear > dob.getFullYear()) {
-          await page.getByRole('button', { name: 'Previous year' }).click();
-        } else {
-          await page.getByRole('button', { name: 'Next year' }).click();
-        }
-        currentYear = parseInt(await page.locator('button.MuiPickersYear-root.Mui-selected').textContent());
-      }
+// 3. Select year
+await page.getByRole('radio', { name: String(dob.getFullYear()) }).click();
 
-      await page.getByRole('option', { name: dob.toLocaleString('default', { month: 'long' }) }).click();
-      await page.getByRole('gridcell', { name: String(dob.getDate()) }).click();
+// 4. Navigate to target month
+const targetMonth = dob.toLocaleString('default', { month: 'long' });
+
+let visibleMonth = await page.locator('.MuiPickersCalendarHeader-label').first().innerText();
+while (!visibleMonth.includes(targetMonth)) {
+  const visibleIndex = new Date(`${visibleMonth} 1`).getMonth();
+  const targetIndex = dob.getMonth();
+
+  if (visibleIndex > targetIndex) {
+    await page.getByRole('button', { name: 'Previous month' }).click();
+  } else {
+    await page.getByRole('button', { name: 'Next month' }).click();
+  }
+
+  // update after navigation
+  visibleMonth = await page.locator('.MuiPickersCalendarHeader-label').first().innerText();
+}
+
+// 5. Select day (scoped to the current visible month/year grid)
+const calendar = page.getByRole('grid', { name: `${targetMonth} ${dob.getFullYear()}` });
+
+// pick the day inside that grid only
+await calendar.getByRole('gridcell', { name: String(dob.getDate()), exact: true }).first().click();
+
 
       await page.getByRole('textbox', { name: 'Driving License *' }).fill('DL' + randomString(6));
 
-      function randomFutureDate(minDaysAhead = 7, maxYearsAhead = 5) {
-        const today = new Date();
-        const minDate = new Date(today.getTime() + minDaysAhead * 24 * 60 * 60 * 1000);
-        const maxDate = new Date(today.getFullYear() + maxYearsAhead, today.getMonth(), today.getDate());
-        return new Date(minDate.getTime() + Math.random() * (maxDate.getTime() - minDate.getTime()));
-      }
+      // --- Country of Issue ---
+const randomIssue = countries[Math.floor(Math.random() * countries.length)];
+console.log(`🌍 Selected Country of Issue: ${randomIssue}`);
 
-      const expiry = randomFutureDate();
-      console.log(`📅 Selected Expiry Date: ${expiry.toDateString()}`);
+await page.locator('div:nth-child(7) > .MuiInputBase-root > #demo-simple-select').click();
+await page.getByRole('option', { name: randomIssue }).click();
 
-      await page.getByRole('button', { name: 'Choose date', exact: true }).click();
-      await page.getByRole('option', { name: String(expiry.getFullYear()) }).click();
-      await page.getByText(expiry.toLocaleString('default', { month: 'long' })).click();
-      await page.getByRole('gridcell', { name: String(expiry.getDate()) }).first().click();
+      // Generate random future expiry date (min 7 days ahead, up to 5 years)
+function randomFutureDate(minDaysAhead = 7, maxYearsAhead = 5) {
+  const today = new Date();
+  const minDate = new Date(today.getTime() + minDaysAhead * 24 * 60 * 60 * 1000);
+  const maxDate = new Date(today.getFullYear() + maxYearsAhead, today.getMonth(), today.getDate());
+  return new Date(minDate.getTime() + Math.random() * (maxDate.getTime() - minDate.getTime()));
+}
+
+const expiry = randomFutureDate();
+console.log(`📅 Selected Expiry Date: ${expiry.toDateString()}`);
+
+// 1. Open expiry calendar
+await page.getByRole('button', { name: 'Choose date', exact: true }).click();
+
+// 2. Open year view
+const expiryCurrentMonth = await page.locator('.MuiPickersCalendarHeader-label').first().innerText();
+await page.getByText(expiryCurrentMonth).click();
+
+// 3. Select year
+await page.getByRole('radio', { name: String(expiry.getFullYear()) }).click();
+
+// 4. Navigate to target month
+const expiryTargetMonth = expiry.toLocaleString('default', { month: 'long' });
+
+let expiryVisibleMonth = await page.locator('.MuiPickersCalendarHeader-label').first().innerText();
+while (!expiryVisibleMonth.includes(expiryTargetMonth)) {
+  const visibleIndex = new Date(`${expiryVisibleMonth} 1`).getMonth();
+  const targetIndex = expiry.getMonth();
+
+  if (visibleIndex > targetIndex) {
+    await page.getByRole('button', { name: 'Previous month' }).click();
+  } else {
+    await page.getByRole('button', { name: 'Next month' }).click();
+  }
+
+  expiryVisibleMonth = await page.locator('.MuiPickersCalendarHeader-label').first().innerText();
+}
+
+// 5. Select day (inside correct grid only)
+const expiryCalendar = page.getByRole('grid', { name: `${expiryTargetMonth} ${expiry.getFullYear()}` });
+await expiryCalendar.getByRole('gridcell', { name: String(expiry.getDate()), exact: true }).first().click();
+
+
+function randomPhoneNumber() {
+  // List of valid US area codes (you can expand this list as needed)
+  const areaCodes = [252, 464, 541, 612, 707, 305, 415, 646, 714, 818];
+
+  // Pick a random area code
+  const areaCode = areaCodes[Math.floor(Math.random() * areaCodes.length)];
+
+  // Generate remaining 7 digits
+  let rest = '';
+  for (let i = 0; i < 7; i++) {
+    rest += Math.floor(Math.random() * 10);
+  }
+
+  return `${areaCode}${rest}`;
+}
 
       await page.getByRole('textbox', { name: 'Mobile Number *' }).fill(randomPhoneNumber());
-
-      // Reuse shared stateZipMap
-      const statesPCI = Object.keys(stateZipMap);
-      const randomStatePCI = statesPCI[Math.floor(Math.random() * statesPCI.length)];
-      const zipsPCI = stateZipMap[randomStatePCI];
-      const randomZipPCI = zipsPCI[Math.floor(Math.random() * zipsPCI.length)];
-
-      console.log(`🌍 Selected PCI State: ${randomStatePCI}, ZIP: ${randomZipPCI}`);
 
       await page.getByRole('textbox', { name: 'Address Line 1 *' }).fill('Business residential address 1');
       await page.getByRole('textbox', { name: 'Address Line 2' }).fill('Business residential address 2');
       await page.getByRole('textbox', { name: 'City/Town *' }).fill('Demo City');
 
-      await page.getByRole('combobox', { name: 'State/Region' }).selectOption(randomStatePCI);
-      await page.getByRole('textbox', { name: 'ZIP/Postal Code *' }).fill(randomZipPCI);
+      // --- PCI State + ZIP selection ---
+// Pick a random state from stateZipMap
+const statesPCI = Object.keys(stateZipMap);
+const randomStatePCI = statesPCI[Math.floor(Math.random() * statesPCI.length)];
 
-      await saveAndNext(page, 'Billing');
+// Pick a ZIP that belongs to the chosen state
+const zipsPCI = stateZipMap[randomStatePCI];
+const randomZipPCI = zipsPCI[Math.floor(Math.random() * zipsPCI.length)];
+
+console.log(`🌍 Selected PCI State: ${randomStatePCI}, ZIP: ${randomZipPCI}`);
+
+// Locate State/Region
+const stateDropdownPCI = page.locator('.space-y-3 > .grid > div:nth-child(4) > .MuiInputBase-root > #demo-simple-select');
+// Open dropdown and select state option
+await stateDropdownPCI.click();
+const optionPCI = page.locator('li[role="option"]', { hasText: new RegExp(`^${randomStatePCI}$`) });
+await expect(optionPCI).toBeVisible({ timeout: 5000 });
+await optionPCI.click();
+
+// Fill ZIP matching the selected state
+await page.getByLabel('ZIP/Postal Code *').fill(randomZipPCI);
+
+
+await saveAndNext(page, 'Payment Information', true);
       break;
 
-    case 'Billing':
-      console.log('🏦 Filling Billing step...');
-      await saveAndNext(page, 'Store');
-      break;
+    case 'Payment Information':
+  console.log('💳 Filling Payment Information step...');
+  await saveAndNext(page, 'Store');
+  break;
 
     case 'Store':
       console.log('🏬 Store step...');
@@ -310,6 +442,7 @@ test('Continue stepper flow with existing user (with auto-auth)', async ({ brows
 
     const possibleSteps = [
       '/account-management/welcome',
+      '/account-management/account-type',
       '/account-management/account-type/business/create-account?step=0',
       '/account-management/account-type/business/create-account?step=1',
       '/account-management/account-type/business/create-account?step=2',
@@ -332,15 +465,32 @@ test('Continue stepper flow with existing user (with auto-auth)', async ({ brows
     if (!navigated) {
       console.log('⚠️ Could not navigate to stepper, maybe already completed.');
     }
+    // 👇 ADD THIS
+if (page.url().includes('/sign-in')) {
+  console.log('⚠️ Session expired, doing fresh login...');
+  await context.close();
+  ({ context, page } = await freshLogin(browser));
+}
   }
 
   if (page.url().includes('/welcome')) {
-    console.log('👀 Seller landed on Welcome page, waiting for auto-redirect...');
-    await page.waitForURL('**/account-management/account-type/business/create-account?step=*', {
-      timeout: 60000
-    });
+  console.log('👀 Seller landed on Welcome page, waiting for auto-redirect...');
+  await page.waitForLoadState('domcontentloaded');
+
+  // Wait for either redirect to stepper OR fallback to sign-in
+  await Promise.race([
+    page.waitForURL('**/account-management/account-type/business/create-account?step=*', { timeout: 60000 }),
+    page.waitForURL('**/sign-in', { timeout: 60000 })
+  ]);
+
+  if (page.url().includes('/sign-in')) {
+    console.log('⚠️ Auto-redirect sent us back to sign-in, session is invalid.');
+    await context.close();
+    ({ context, page } = await freshLogin(browser));
+  } else {
     console.log(`➡️ Auto-redirect completed: ${page.url()}`);
   }
+}
 
   let keepGoing = true;
   while (keepGoing) {
