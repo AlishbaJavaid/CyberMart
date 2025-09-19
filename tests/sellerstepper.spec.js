@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 
+const imagePath = (filename) => path.join(__dirname, '../test-data/Images', filename);
+
 // --- Utils ---
 function randomString(length) {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -14,12 +16,60 @@ function randomDigits(length) {
 
 // --- State/ZIP mapping (shared) ---
 const stateZipMap = {
-  'Alaska': ['99501', '99501', '99501'],
-  'Maine': ['03901'],
-//   'California': ['90001', '94105', '95814'],
-//   'New York': ['10001', '11201', '14604'],
-//   'Texas': ['73301', '75001', '77001'],
-//   'Florida': ['33101', '32801', '32202'],
+  "Delaware": ["19701", "19980"],
+  "Alaska": ["99501", "99950"],
+  "Maryland": ["20601", "21930"],
+  "New Hampshire": ["03031", "03897"],
+  "Kansas": ["66002", "67954"],
+  "Texas": ["75001", "88595"],
+  "Nebraska": ["68001", "69367"],
+  "Vermont": ["05001", "05495"],
+  "Hawaii": ["96701", "96898"],
+  "Guam": ["96910", "96932"],
+  "Utah": ["84001", "84791"],
+  "Oregon": ["97001", "97920"],
+  "California": ["90001", "96162"],
+  "New Jersey": ["07001", "08989"],
+  "North Dakota": ["58001", "58856"],
+  "Kentucky": ["40003", "42788"],
+  "Minnesota": ["55001", "56763"],
+  "Oklahoma": ["73001", "74966"],
+  "Pennsylvania": ["15001", "19640"],
+  "New Mexico": ["87001", "88439"],
+  "Illinois": ["60001", "62999"],
+  "Michigan": ["48001", "49971"],
+  "Virginia": ["20101", "24658"],
+  "West Virginia": ["24701", "26886"],
+  "Mississippi": ["38601", "39776"],
+  "Northern Mariana Islands": ["96950", "96952"],
+  "Massachusetts": ["01001", "02791"],
+  "Arizona": ["85001", "86556"],
+  "Connecticut": ["06001", "06389"],
+  "Florida": ["32003", "34997"],
+  "District of Columbia": ["20001", "20020"],
+  "Indiana": ["46001", "47997"],
+  "Wisconsin": ["53001", "54990"],
+  "Wyoming": ["82001", "83414"],
+  "South Carolina": ["29001", "29945"],
+  "Arkansas": ["71601", "72959"],
+  "South Dakota": ["57001", "57799"],
+  "Montana": ["59001", "59937"],
+  "North Carolina": ["27006", "28909"],
+  "Puerto Rico": ["00601", "00988"],
+  "Colorado": ["80001", "81658"],
+  "Missouri": ["63005", "65899"],
+  "New York": ["10001", "14975"],
+  "Maine": ["03901", "04992"],
+  "Tennessee": ["37010", "38589"],
+  "Georgia": ["30001", "31999"],
+  "Alabama": ["35004", "36925"],
+  "Louisiana": ["70001", "71497"],
+  "Nevada": ["88901", "89883"],
+  "Iowa": ["50001", "52809"],
+  "Idaho": ["83201", "83877"],
+  "Rhode Island": ["02801", "02940"],
+  "Washington": ["98001", "99403"],
+  "Ohio": ["43001", "45999"]
 };
 
 // --- Auth & Seller Config ---
@@ -29,32 +79,9 @@ const sellers = JSON.parse(fs.readFileSync(sellersPath, 'utf8'));
 const sellerType = process.env.SELLER || 'lastSignup';
 const { email, password } = sellers[sellerType];
 
-// /// --- Save & Next helper (with retries + debug logs) ---
-// async function saveAndNext(page, nextStepHeading) {
-//   const saveBtn = page.getByRole('button', { name: /Continue|Save/i });
-//   await expect(saveBtn).toBeEnabled({ timeout: 30000 });
+//Run this to use custom seller from sellers.json file
+//npx cross-env SELLER=customSeller npx playwright test tests/sellerstepper.spec.js --headed
 
-//   const maxRetries = 3;
-//   for (let attempt = 1; attempt <= maxRetries; attempt++) {
-//     console.log(`🖱️ Clicking "Save and Next" (attempt ${attempt})...`);
-//     await saveBtn.click({ force: true });
-
-//     // wait a little before checking
-//     await page.waitForTimeout(1500);
-
-//     const currentStep = await detectStep(page);
-//     console.log(`🔎 After click → Expected: ${nextStepHeading}, Detected: ${currentStep}`);
-
-//     if (currentStep === nextStepHeading) {
-//       console.log(`✅ Step advanced to ${nextStepHeading}`);
-//       return;
-//     }
-
-//     console.log(`⚠️ Still on ${currentStep}, retrying...`);
-//   }
-
-//   throw new Error(`❌ Could not advance to step: ${nextStepHeading}`);
-// }
 /// --- Save & Next helper (with retries + OTP handling + debug logs) ---
 async function saveAndNext(page, nextStepHeading, needsOTP = false) {
   const saveBtn = page.getByRole('button', { name: /Continue|Save/i });
@@ -135,62 +162,70 @@ async function freshLogin(browser) {
   return { context: ctx, page: pg };
 }
 
-// --- Step detection ---
+// --- Step detection (URL-first) ---
 async function detectStep(page) {
-  // wait until at least one step heading is visible
-  await page.getByRole('heading', { level: 6 }).first().waitFor({ timeout: 10000 });
+  const url = page.url();
 
-  if (await page.getByRole('heading', { level: 6, name: /Account Type/i }).isVisible().catch(() => false)) {
-    return 'Account Type';
+  if (url.includes('/account-management/welcome')) {
+    return 'Welcome';
   }
-  if (await page.getByRole('heading', { level: 6, name: /Business Information/i }).isVisible().catch(() => false)) {
+  if (url.includes('/account-management/account-type') && !url.includes('?step=')) {
+  return 'Account Type';
+}
+  if (url.includes('?step=0')) {
     return 'Business Information';
   }
-  if (await page.getByRole('heading', { level: 6, name: /Primary Contact Information(\s*\(PCI\))?/i }).isVisible().catch(() => false)) {
+  if (url.includes('?step=1')) {
     return 'Primary Contact Information';
   }
-  if (await page.getByRole('heading', { level: 6, name: /Payment Information/i }).isVisible().catch(() => false)) {
-  return 'Payment Information';
-}
-  if (await page.getByRole('heading', { level: 6, name: /Store/i }).isVisible().catch(() => false)) {
-    return 'Store';
+  if (url.includes('?step=2')) {
+    return 'Payment Information';
   }
-  if (await page.getByRole('heading', { level: 6, name: /Verification/i }).isVisible().catch(() => false)) {
-    return 'Verification';
+  if (url.includes('?step=3')) {
+    return 'Store and Product Information';
   }
-
-  // Fallback: check URL
-  const stepperUrls = [
-    '/account-management/welcome',
-    '/account-management/account-type',
-    '/account-management/account-type/business/create-account?step=0',
-    '/account-management/account-type/business/create-account?step=1',
-    '/account-management/account-type/business/create-account?step=2',
-    '/account-management/account-type/business/create-account?step=3',
-    '/account-management/account-type/business/create-account?step=4',
-  ];
-
-  if (stepperUrls.some(url => page.url().includes(url))) {
-    console.log(`⚠️ On stepper URL but heading not matched: ${page.url()}`);
-    return 'unknown-step';
+  if (url.includes('?step=4')) {
+    // Step 4 has two possible variants, disambiguate via heading
+    if (await page.getByRole('heading', { level: 6, name: /Identity and Address Verification/i })
+                 .isVisible().catch(() => false)) {
+      return 'Identity and Address Verification';
+    }
+    if (await page.getByRole('heading', { level: 6, name: /Identity Verification/i })
+                 .isVisible().catch(() => false)) {
+      return 'Identity Verification';
+    }
+    return 'Step 4 (unknown variant)';
   }
-
-  if (page.url().includes('/dashboard')) {
+  // ✅ Handle dashboard
+  if (url.includes('/dashboard')) {
     console.log('✅ Seller already completed stepper, now on dashboard.');
-    return null;
+    return null; // no further steps
   }
-
-  return 'unknown-step';
+  throw new Error(`⚠️ Unknown step. URL=${url}`);
 }
 
 // --- Step handlers ---
 async function handleStep(page, step) {
   switch (step) {
+    case 'Welcome':
+  console.log('👀 Handling Welcome step...');
+  const startButton = page.getByRole('button', { name: "Let's Start" });
+  
+  if (await startButton.isVisible().catch(() => false)) {
+    await startButton.click();
+    console.log('✅ Clicked "Let\'s Start", moving to Account Type step...');
+    // Wait until redirected to Account Type page
+    await page.waitForURL('**/account-management/account-type**', { timeout: 30000 });
+  } else {
+    console.log('➡️ Welcome already completed, skipping...');
+  }
+  break;
+
     case 'Account Type':
       console.log('⚙️ Handling Account Type step...');
       await page.locator('div').filter({ hasText: /^PrivatelyOwn Business$/ }).first().click();
       await expect(page.getByText('Business Account')).toBeVisible();
-      await expect(page.getByText('I confirm my account type are correct...')).toBeVisible();
+      await expect(page.getByText('I confirm my account type are correct, and I understand that this information cannot be changed later.')).toBeVisible();
       await page.getByRole('checkbox').check();
       await page.getByRole('button', { name: 'Agree and Continue' }).click();
       break;
@@ -237,9 +272,36 @@ async function handleStep(page, step) {
       await page.getByRole('textbox', { name: 'Last Name *' }).fill(pci.last);
       console.log(`📌 PCI Name filled: ${pci.first} ${pci.last}`);
 
-      // 🌍 Shared countries list
+      // 🌍 Shared full countries list
 const countries = [
-  'Albania', 'Algeria', 'Pakistan', 'Canada', 'Germany', 'France', 'India'
+  "Afghanistan","Albania","Algeria","Andorra","Angola","Antigua and Barbuda",
+  "Argentina","Armenia","Australia","Austria","Azerbaijan","Bahamas","Bahrain",
+  "Bangladesh","Barbados","Belarus","Belgium","Belize","Benin","Bhutan","Bolivia",
+  "Bosnia and Herzegovina","Botswana","Brazil","Brunei","Bulgaria","Burkina Faso",
+  "Burundi","Cabo Verde","Cambodia","Cameroon","Canada","Central African Republic",
+  "Chad","Chile","China","Colombia","Comoros","Congo","Congo, Democratic Republic of the",
+  "Costa Rica","Croatia","Cuba","Cyprus","Czech Republic","Denmark","Djibouti",
+  "Dominica","Dominican Republic","Ecuador","Egypt","El Salvador","Equatorial Guinea",
+  "Eritrea","Estonia","Eswatini","Ethiopia","Fiji","Finland","France","Gabon","Gambia",
+  "Georgia","Germany","Ghana","Greece","Grenada","Guatemala","Guinea","Guinea-Bissau",
+  "Guyana","Haiti","Honduras","Hungary","Iceland","India","Indonesia","Iran","Iraq",
+  "Ireland","Israel","Italy","Jamaica","Japan","Jordan","Kazakhstan","Kenya","Kiribati",
+  "Kuwait","Kyrgyzstan","Laos","Latvia","Lebanon","Lesotho","Liberia","Libya",
+  "Liechtenstein","Lithuania","Luxembourg","Madagascar","Malawi","Malaysia","Maldives",
+  "Mali","Malta","Marshall Islands","Mauritania","Mauritius","Mexico","Micronesia",
+  "Moldova","Monaco","Mongolia","Montenegro","Morocco","Mozambique","Myanmar","Namibia",
+  "Nauru","Nepal","Netherlands","New Zealand","Nicaragua","Niger","Nigeria",
+  "North Macedonia","Norway","Oman","Pakistan","Palau","Panama","Papua New Guinea",
+  "Paraguay","Peru","Philippines","Poland","Portugal","Qatar","Romania","Russia",
+  "Rwanda","Saint Kitts and Nevis","Saint Lucia","Saint Vincent and the Grenadines",
+  "Samoa","San Marino","Sao Tome and Principe","Saudi Arabia","Senegal","Serbia",
+  "Seychelles","Sierra Leone","Singapore","Slovakia","Slovenia","Solomon Islands",
+  "Somalia","South Africa","South Korea","South Sudan","Spain","Sri Lanka","Sudan",
+  "Suriname","Sweden","Switzerland","Syria","Taiwan","Tajikistan","Tanzania","Thailand",
+  "Timor-Leste","Togo","Tonga","Trinidad and Tobago","Tunisia","Turkey","Turkmenistan",
+  "Tuvalu","Uganda","Ukraine","United Arab Emirates","United Kingdom","United States",
+  "Uruguay","Uzbekistan","Vanuatu","Vatican City","Venezuela","Vietnam","Yemen",
+  "Zambia","Zimbabwe"
 ];
       // --- Country of Citizenship ---
 const randomCitizenship = countries[Math.floor(Math.random() * countries.length)];
@@ -402,23 +464,223 @@ await page.getByLabel('ZIP/Postal Code *').fill(randomZipPCI);
 await saveAndNext(page, 'Payment Information', true);
       break;
 
-    case 'Payment Information':
+      case 'Payment Information':
   console.log('💳 Filling Payment Information step...');
-  await saveAndNext(page, 'Store');
+
+  // --- Bank selection ---
+  const banks = [
+    "Ally Bank",
+    "Bank of America",
+    "BMO Harris Bank",
+    "Capital One Bank",
+    "Citibank",
+    "Citizens Bank",
+    "Comerica Bank",
+    "Example Bank",
+    "Fifth Third Bank",
+    "HSBC Bank USA",
+    "Huntington Bank",
+    "JPMorgan Chase Bank",
+    "KeyBank",
+    "M&T Bank",
+    "PNC Bank",
+    "Regions Bank",
+    "Santander Bank",
+    "TD Bank",
+    "Truist Bank (formerly BB&T and SunTrust)",
+    "U.S. Bank",
+    "Wells Fargo Bank"
+  ];
+
+  const randomBank = banks[Math.floor(Math.random() * banks.length)];
+  console.log(`🏦 Selected Bank: ${randomBank}`);
+
+  await page.getByRole('combobox', { name: 'Select Bank' }).click();
+  await page.getByRole('option', { name: randomBank }).click();
+
+  // --- Routing number selection ---
+  const routingNumbers = [
+    "011000015", // Federal Reserve Bank - Boston
+    "021000021", // JPMorgan Chase - New York
+    "031000053", // PNC Bank - Pittsburgh
+    "041000124", // Huntington National Bank - Columbus
+    "051000017", // Wells Fargo - Richmond
+    "061000104", // Bank of America - Atlanta
+    "071000013", // Chase Bank - Chicago
+    "081000210", // Regions Bank - St. Louis
+    "091000019", // U.S. Bank - Minneapolis
+    "101000187"  // Commerce Bank - Kansas City
+  ];
+
+  const randomRouting = routingNumbers[Math.floor(Math.random() * routingNumbers.length)];
+  console.log(`🔢 Selected Routing Number: ${randomRouting}`);
+
+  await page.getByRole('textbox', { name: /Routing Number/i }).fill(randomRouting);
+
+  // --- Account number generation (10–12 digits) ---
+  function randomAccountNumber() {
+    const length = Math.floor(Math.random() * 3) + 10; // 10, 11, or 12
+    return Array.from({ length }, () => Math.floor(Math.random() * 10)).join('');
+  }
+
+  const accountNumber = randomAccountNumber();
+  console.log(`🏦 Generated Account Number: ${accountNumber}`);
+
+  await page.getByRole('textbox', { name: /^Account Number/i, exact: true }).fill(accountNumber);
+  await page.getByRole('textbox', { name: /Re-enter Bank Account Number/i }).fill(accountNumber);
+
+  // --- Continue to next step ---
+  await saveAndNext(page, 'Store and Product Information');
   break;
 
-    case 'Store':
-      console.log('🏬 Store step...');
-      await page.getByRole('combobox', { name: 'Select Bank' }).click();
-      await page.getByRole('option').nth(2).click();
+    case 'Store and Product Information':
+  console.log('🏬 Filling Store and Product Information step...');
 
-      const accountNumber = randomDigits(Math.floor(Math.random() * 3) + 10);
-      await page.getByRole('textbox', { name: 'Digit Routing Number *' }).fill('021000021');
-      await page.getByRole('textbox', { name: 'Account Number *', exact: true }).fill(accountNumber);
-      await page.getByRole('textbox', { name: 'Re-enter Bank Account Number *' }).fill(accountNumber);
+  // --- Unique store name ---
+  const storeName = `Store_${Date.now()}`;
+  await page.getByRole('textbox', { name: 'Enter your store name *' }).fill(storeName);
 
-      await saveAndNext(page, 'Verification');
-      break;
+  // --- Radios (choose randomly Yes/No) ---
+  const radioChoices = ['Yes', 'No'];
+  const firstRadio = radioChoices[Math.floor(Math.random() * radioChoices.length)];
+  const secondRadio = radioChoices[Math.floor(Math.random() * radioChoices.length)];
+  await page.getByRole('radio', { name: firstRadio }).first().check();
+  await page.getByRole('radio', { name: secondRadio }).nth(1).check();
+
+  // --- Random answers (>20 chars) ---
+  const randomAnswer = `This is a long enough random answer for testing ${Math.random().toString(36).slice(2, 10)}`;
+  const randomDescription = `My business description is sufficiently long for validation ${Math.random().toString(36).repeat(2)}`;
+
+  await page.getByRole('textbox', { name: 'Enter Answer *' }).fill(randomAnswer);
+  await page.getByRole('textbox', { name: 'Enter description *' }).fill(randomDescription);
+
+  // --- Address ---
+  await page.getByRole('textbox', { name: 'Address Name *' }).fill('Business Warehouse Address');
+  await page.getByRole('textbox', { name: 'Address Line 1 *' }).fill('Business warehouse address 1');
+  await page.getByRole('textbox', { name: 'Address Line 2' }).fill('Business warehouse address 2');
+
+  // --- State + ZIP selection ---
+  const statesStore = Object.keys(stateZipMap);
+  const randomStateStore = statesStore[Math.floor(Math.random() * statesStore.length)];
+  const zipsStore = stateZipMap[randomStateStore];
+  const randomZipStore = zipsStore[Math.floor(Math.random() * zipsStore.length)];
+
+  console.log(`🌍 Selected Store State: ${randomStateStore}, ZIP: ${randomZipStore}`);
+
+  // City = first two letters of state
+  const cityStore = randomStateStore.substring(0, 2).toUpperCase();
+  await page.getByRole('textbox', { name: 'City/Town *' }).fill(cityStore);
+
+  // Select state from dropdown
+  const stateDropdownStore = page.getByRole('combobox', { name: 'State/Region' }).first();
+  await stateDropdownStore.click();
+  const optionStore = page.getByRole('option', { name: randomStateStore });
+  await expect(optionStore).toBeVisible({ timeout: 5000 });
+  await optionStore.click();
+
+  // Fill ZIP matching state
+  await page.getByRole('textbox', { name: 'ZIP/Postal Code *' }).fill(randomZipStore);
+
+  // --- Continue ---
+  await saveAndNext(page, 'Identity and Address Verification');
+  break;
+
+  case 'Identity and Address Verification':
+  console.log('🏬 Filling Identity and Address Verification step...');
+
+  // detect if documents are already uploaded (no file inputs present)
+  const fileInputs = page.locator('input[type="file"]');
+  const fileCount = await fileInputs.count();
+
+  if (fileCount === 0) {
+    console.log('⚡ Docs already uploaded, skipping upload.');
+    await page.getByRole('button', { name: 'Save and Next' }).click();
+    break;
+  }
+
+  // otherwise, upload as normal
+  const companyImage = imagePath('817UJvB1BrL._SL1500_.jpg');
+  const dlFront      = imagePath('71VBGavZfcL._SL1500_.jpg');
+  const dlBack       = imagePath('81aKZJZEUEL._SL1500_.jpg');
+
+  await expect(fileInputs).toHaveCount(3, { timeout: 10000 });
+
+  await fileInputs.nth(0).setInputFiles(companyImage);
+  console.log('📸 Uploaded company registration image');
+
+  await fileInputs.nth(1).setInputFiles(dlFront);
+  console.log('📸 Uploaded DL front image');
+
+  await fileInputs.nth(2).setInputFiles(dlBack);
+  console.log('📸 Uploaded DL back image');
+
+  await page.getByRole('button', { name: 'Save and Next' }).click();
+  break;
+
+  case 'Identity Verification':
+  console.log('🏬 Filling Identity Verification step...');
+
+  // --- Step 2: Pick a random date (3rd–9th of that month) ---
+  const day = Math.floor(Math.random() * 7) + 3; // 3–9
+
+  // get all enabled gridcells with that day number
+  const dayCells = page.getByRole('gridcell', { name: String(day), exact: true })
+    .filter({ hasNot: page.locator('[disabled]') });
+
+  // ✅ Manual assertion (no redeclare issue)
+  const dayCount = await dayCells.count();
+  expect(dayCount).toBeGreaterThan(0);
+
+  // click the first enabled one
+  await dayCells.first().click();
+  console.log(`📅 Picked appointment date (day): ${day}`);
+
+  // --- Step 3: Select a random region ---
+  await page.getByRole('combobox', { name: 'Select Region' }).click();
+
+  const regions = [
+    "Eastern Time (ET) GMT-04:00",
+    "Central Time (CT) GMT-05:00",
+    "Mountain Time (MT) GMT-06:00",
+    "Pacific Time (PT) GMT-07:00",
+    "Alaska Time (AKT) GMT-08:00",
+    "Hawaii-Aleutian Time (HAT) GMT-10:00",
+    "Atlantic Time (AT) GMT-04:00",
+    "Samoa Time (SST) GMT-11:00",
+    "Chamorro Time (ChT) GMT+10:00"
+  ];
+
+  const region = regions[Math.floor(Math.random() * regions.length)];
+  await page.getByRole('option', { name: region }).click();
+  console.log(`🌍 Selected region: ${region}`);
+
+  // --- Step 4: Pick a timeslot (must select to proceed) ---
+  await page.getByRole('combobox', { name: 'Time' }).click();
+
+  const timeOptions = page.getByRole('option');
+  await expect(timeOptions.first()).toBeVisible({ timeout: 5000 });
+  const timeCount = await timeOptions.count(); // ✅ different name
+
+  if (timeCount === 0) {
+    throw new Error(`❌ No available timeslots for chosen date (day ${day}) in ${region}`);
+  }
+
+  // random available slot
+  const randomSlotIndex = Math.floor(Math.random() * timeCount);
+  const slotText = await timeOptions.nth(randomSlotIndex).textContent();
+  await timeOptions.nth(randomSlotIndex).click();
+  console.log(`⏰ Selected timeslot: ${slotText}`);
+
+  // ✅ Wait until combobox reflects the selected slot instead of using timeout
+  await expect(page.getByRole('combobox', { name: 'Time' })).toHaveValue(slotText, { timeout: 5000 });
+
+  // --- Step 5: Save & Finish ---
+  await page.getByRole('button', { name: 'Save and Finish' }).click();
+  console.log('✅ Appointment booked & stepper finished → Dashboard');
+
+  // --- Step 6: Verify seller is on dashboard ---
+  await expect(page).toHaveURL(/dashboard/);
+  break;
   }
   return true;
 }
@@ -476,6 +738,20 @@ if (page.url().includes('/sign-in')) {
   if (page.url().includes('/welcome')) {
   console.log('👀 Seller landed on Welcome page, waiting for auto-redirect...');
   await page.waitForLoadState('domcontentloaded');
+
+  if (page.url().includes('/welcome')) {
+  console.log('👀 Seller landed on Welcome page, waiting for "Let\'s Start" button...');
+
+  // Wait for the button to appear and click it
+  const startButton = page.getByRole('button', { name: "Let's Start" });
+  await expect(startButton).toBeVisible({ timeout: 15000 });
+  await startButton.click();
+  console.log('✅ Clicked "Let\'s Start", moving to Account Type step...');
+
+  // Wait for stepper page to load
+  await page.waitForURL('**/account-management/account-type/business/create-account?step=0', { timeout: 30000 });
+  console.log(`➡️ Stepper started: ${page.url()}`);
+}
 
   // Wait for either redirect to stepper OR fallback to sign-in
   await Promise.race([

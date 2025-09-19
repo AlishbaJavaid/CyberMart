@@ -1,5 +1,13 @@
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
+import path from 'path';
+
+// --- Random generators ---
+function randomEmail() {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const randomPart = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  return `alishba+${randomPart}@cybermart.com`;
+}
 
 // … your random generators (randomEmail, etc.)
 
@@ -23,10 +31,17 @@ test('Business account signup flow', async ({ page }) => {
 
   await page.getByTestId('signup-submit').click();
 
-  // … continue OTP etc …
+  // --- OTP verification step ---
+  await page.getByRole('textbox', { name: 'Enter OTP *' }).waitFor({ state: 'visible', timeout: 30000 });
+  await page.getByRole('textbox', { name: 'Enter OTP *' }).fill('123456');
+  await page.getByRole('button', { name: 'Verify' }).click();
+
+   // --- Wait until landing on welcome page ---
+  await page.waitForURL('https://qav2.cybermart.com/welcome', { timeout: 30000 });
+  console.log('🎉 Landed on welcome page!');
 
   // ✅ Save into sellers.json
-  const sellersFile = 'sellers.json';
+  const sellersFile = path.resolve(__dirname, 'sellers.json');
   const sellers = fs.existsSync(sellersFile)
     ? JSON.parse(fs.readFileSync(sellersFile, 'utf8'))
     : {};
