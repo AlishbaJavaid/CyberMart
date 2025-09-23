@@ -27,7 +27,7 @@ test('Business account signup flow', async ({ page }) => {
   await page.waitForFunction(() => {
     const el = document.querySelector('textarea[name="g-recaptcha-response"]');
     return el && el.value.length > 0;
-  }, { timeout: 180000 });
+  }, { timeout: 200000 });
 
   await page.getByTestId('signup-submit').click();
 

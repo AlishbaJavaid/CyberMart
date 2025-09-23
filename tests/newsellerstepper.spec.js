@@ -79,41 +79,46 @@ const sellers = JSON.parse(fs.readFileSync(sellersPath, 'utf8'));
 const sellerType = process.env.SELLER || 'lastSignup';
 const { email, password } = sellers[sellerType];
 
-// --- Save & Next helper (with retries + OTP handling + debug logs) ---
-async function saveAndNext(page, nextStepHeading, needsOTP = false) {
-  const saveBtn = page.getByRole('button', { name: /Continue|Save/i });
-  await expect(saveBtn).toBeEnabled({ timeout: 30000 });
+console.log(`👤 Using seller type: ${sellerType}`);
+console.log(`📧 Email: ${email}`);
 
-  const maxRetries = 3;
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    console.log(`🖱️ Clicking "Save and Next" (attempt ${attempt})...`);
-    await saveBtn.click({ force: true });
+async function saveAndNext(page, nextStepHeading) {
+    const saveBtn = page.getByRole('button', { name: /Continue|Save|Save and Next|Save & Next/i }).first();
+    await expect(saveBtn).toBeEnabled({ timeout: 30000 });
 
-    await page.waitForTimeout(1500);
+    const maxRetries = 2;
 
-    if (needsOTP) {
-      const otpBox = page.getByRole('textbox', { name: 'Enter OTP *' });
-      if (await otpBox.isVisible()) {
-        console.log(`🔐 OTP popup detected, entering code...`);
-        await otpBox.fill('123456');
-        await page.getByRole('button', { name: 'Verify' }).click();
-        await expect(otpBox).toHaveCount(0, { timeout: 15000 });
-        console.log(`✅ OTP verified successfully`);
-      }
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        console.log(`🖱️ Clicking "Save and Next" (attempt ${attempt})...`);
+        await saveBtn.click({ force: true });
+
+        // --- Handle OTP if it appears ---
+        const otpInput = page.getByPlaceholder('Enter OTP *');
+        try {
+            await otpInput.waitFor({ state: 'visible', timeout: 5000 });
+            console.log('🔐 OTP detected — entering OTP...');
+            await otpInput.fill('123456');
+
+            const verifyBtn = page.getByRole('button', { name: /Verify/i });
+            await expect(verifyBtn).toBeEnabled({ timeout: 5000 });
+            await verifyBtn.click();
+
+            // Wait until OTP modal disappears before proceeding
+            await otpInput.waitFor({ state: 'detached', timeout: 15000 });
+            console.log('✅ OTP verified');
+        } catch {
+            // OTP did not appear, continue
+        }
+
+        // --- Detect next step after modal disappears ---
+        const currentStep = await detectStep(page);
+        console.log(`🔎 After click → Expected: ${nextStepHeading}, Detected: ${currentStep}`);
+        if (currentStep === nextStepHeading) return;
+
+        await page.waitForTimeout(1000);
     }
 
-    const currentStep = await detectStep(page);
-    console.log(`🔎 After click → Expected: ${nextStepHeading}, Detected: ${currentStep}`);
-
-    if (currentStep === nextStepHeading) {
-      console.log(`✅ Step advanced to ${nextStepHeading}`);
-      return;
-    }
-
-    console.log(`⚠️ Still on ${currentStep}, retrying...`);
-  }
-
-  throw new Error(`❌ Could not advance to step: ${nextStepHeading}`);
+    throw new Error(`❌ Could not advance to step: ${nextStepHeading}`);
 }
 
 // --- Fresh login flow ---
@@ -155,8 +160,18 @@ async function freshLogin(browser) {
 
 // --- Session check helper ---
 async function ensureValidSession(browser, context, page) {
-  if (page.url().includes('/sign-in')) {
-    console.log('⚠️ Session expired, doing fresh login...');
+  try {
+    const url = page.url();
+    if (url.includes('/sign-in')) {
+      console.log('⚠️ Session expired, doing fresh login...');
+      await context.close();
+      const { context: newCtx, page: newPage } = await freshLogin(browser);
+      // Re-save authFile after re-login
+      await newCtx.storageState({ path: authFile });
+      return { context: newCtx, page: newPage };
+    }
+  } catch (err) {
+    console.warn('⚠️ Failed session check, doing fresh login...');
     await context.close();
     return await freshLogin(browser);
   }
@@ -164,7 +179,15 @@ async function ensureValidSession(browser, context, page) {
 }
 
 async function detectStep(page) {
+  // Wait for navigation to settle
+  await page.waitForLoadState('networkidle');
   const url = page.url();
+
+  // ✅ Handle expired session first
+  if (url.includes('/sign-in')) {
+    console.log('⚠️ Session expired — redirecting to login.');
+    return null; // main loop can call ensureValidSession
+  }
 
   // ✅ Specific step URLs (prioritized)
   if (url.includes('?step=0')) return 'Business Information';
@@ -180,11 +203,15 @@ async function detectStep(page) {
   }
 
   // ✅ Welcome page
-  if (url.includes('/account-management/welcome')) return 'Welcome';
+  if (url.includes('/welcome')) return 'Welcome';
 
-  // ✅ Generic Account Type page (no step query param)
-  if (url.includes('/account-management/account-type') && !url.includes('?step=')) return 'Account Type';
-
+  // Account Type only if the heading exists
+  if (url.includes('/account-management/account-type') && !url.includes('?step=')) {
+    if (await page.getByRole('heading', { name: 'Account Type' }).isVisible().catch(() => false)) {
+      return 'Account Type';
+    }
+  }
+  
   // ✅ Dashboard
   if (url.includes('/dashboard')) {
     console.log('✅ Seller already completed stepper, now on dashboard.');
@@ -210,24 +237,26 @@ async function handleStep(page, step) {
       }
       break;
 
-    case 'Account Type':
-  console.log('⚙️ Handling Account Type step...');
+  case 'Account Type':
+      console.log('⚙️ Handling Account Type step...');
 
-  const agreeButton = page.getByRole('button', { name: 'Agree and Continue' });
+      // check if account type is already locked in (checkbox disabled)
+  const disabledCheckbox = await page.getByRole('checkbox').isDisabled().catch(() => false);
 
-  if (await agreeButton.isVisible().catch(() => false)) {
-    console.log('➡️ Agree button visible, clicking to move forward...');
-    await agreeButton.click();
-    console.log('✅ Clicked "Agree and Continue"');
-  } else {
-    console.log('➡️ Account Type already completed, skipping...');
+  if (disabledCheckbox) {
+    console.log('⏭️ Account Type already completed, skipping...');
+    await page.getByRole('button', { name: 'Agree and Continue' }).click();
+    await page.waitForURL(/step=\d/, { timeout: 15000 });
+    break;
   }
-
+      await page.locator('div').filter({ hasText: /^PrivatelyOwn Business$/ }).first().click();
+      await expect(page.getByText('Business Account')).toBeVisible();
+      await expect(page.getByText('I confirm my account type are correct, and I understand that this information cannot be changed later.')).toBeVisible();
+      await page.getByRole('checkbox').check();
+      await page.getByRole('button', { name: 'Agree and Continue' }).click();
   // small wait to let next step load
   await page.waitForTimeout(1500);
   break;
-
-
 
     case 'Business Information':
           console.log('📝 Filling Business Information step...');
@@ -307,7 +336,7 @@ async function handleStep(page, step) {
     console.log(`🌍 Selected Country of Citizenship: ${randomCitizenship}`);
     
     await page.locator('#demo-simple-select').first().click();
-    await page.getByRole('option', { name: randomCitizenship }).click();
+await page.getByRole('listbox').getByRole('option', { name: randomCitizenship, exact: true }).click();
     
           await page.getByRole('textbox', { name: 'EIN/TIN' }).fill(randomDigits(9));
     
@@ -316,7 +345,7 @@ async function handleStep(page, step) {
     console.log(`🌍 Selected Country of Birth: ${randomBirth}`);
     
     await page.locator('div:nth-child(4) > .MuiInputBase-root > #demo-simple-select').first().click();
-    await page.getByRole('option', { name: randomBirth }).click();
+await page.getByRole('listbox').getByRole('option', { name: randomBirth, exact: true }).click();
     
           function randomDOB() {
       const today = new Date();
@@ -370,8 +399,7 @@ async function handleStep(page, step) {
     console.log(`🌍 Selected Country of Issue: ${randomIssue}`);
     
     await page.locator('div:nth-child(7) > .MuiInputBase-root > #demo-simple-select').click();
-    await page.getByRole('option', { name: randomIssue }).click();
-    
+await page.getByRole('listbox').getByRole('option', { name: randomIssue, exact: true }).click();    
           // Generate random future expiry date (min 7 days ahead, up to 5 years)
     function randomFutureDate(minDaysAhead = 7, maxYearsAhead = 5) {
       const today = new Date();
@@ -417,11 +445,14 @@ async function handleStep(page, step) {
     
     function randomPhoneNumber() {
       // List of valid US area codes (you can expand this list as needed)
-      const areaCodes = [252, 464, 541, 612, 707, 305, 415, 646, 714, 818];
+      const areaCodes = [252, 464, 707, 305, 415, 646, 818];
     
       // Pick a random area code
       const areaCode = areaCodes[Math.floor(Math.random() * areaCodes.length)];
     
+      // Ensure first digit after area code is not 0
+      const firstDigit = Math.floor(Math.random() * 9) + 1; // 1–9
+
       // Generate remaining 7 digits
       let rest = '';
       for (let i = 0; i < 7; i++) {
@@ -458,11 +489,11 @@ async function handleStep(page, step) {
     
     // Fill ZIP matching the selected state
     await page.getByLabel('ZIP/Postal Code *').fill(randomZipPCI);
-    
-    
-    await saveAndNext(page, 'Payment Information', true);
-          break;
-    
+
+await saveAndNext(page, 'Payment Information', true);
+
+break;
+
           case 'Payment Information':
       console.log('💳 Filling Payment Information step...');
     
@@ -671,7 +702,7 @@ async function handleStep(page, step) {
       console.log(`⏰ Selected timeslot: ${slotText}`);
     
       // ✅ Wait until combobox reflects the selected slot instead of using timeout
-      await expect(page.getByRole('combobox', { name: 'Time' })).toHaveValue(slotText, { timeout: 5000 });
+      await expect(page.getByRole('combobox', { name: 'Time' })).toHaveText(slotText, { timeout: 5000 });
     
       // --- Step 5: Save & Finish ---
       await page.getByRole('button', { name: 'Save and Finish' }).click();
@@ -712,12 +743,17 @@ test('Continue stepper flow with existing user (with auto-auth)', async ({ brows
 ({ context, page } = await ensureValidSession(browser, context, page));
 
 // Stepper loop: continue until dashboard or no step detected
-let currentStep = await detectStep(page);
+let currentStep;
 
-while (currentStep) {
+while (true) {
+  // ✅ Ensure the session is still valid before every step
+  ({ context, page } = await ensureValidSession(browser, context, page));
+
+  currentStep = await detectStep(page);
+  if (!currentStep) break;
+
   console.log(`➡️ Current step: ${currentStep}`);
   await handleStep(page, currentStep);
-  currentStep = await detectStep(page);
 }
 
 console.log('🎉 Stepper flow completed, now on dashboard.');
