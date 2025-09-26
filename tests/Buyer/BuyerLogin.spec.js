@@ -1,22 +1,31 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, chromium } from '@playwright/test';
 import fs from 'fs';
 
 const STORAGE_FILE = 'buyer-session.json';
+const BUYER_URL = 'https://qabuyer.cybermart.com/';
+const PROFILE_API = 'https://qaapi.cybermart.com/api/v1/user/profile/get-profile';
+const DEFAULT_LOCATION = { latitude: 24.8607, longitude: 67.0011, accuracy: 100 };
 
-test('buyer login with saved session', async ({ page }) => {
-  // Reuse session if available
-  if (fs.existsSync(STORAGE_FILE)) {
-    await page.context().addCookies([]); // ensure no conflict
-    await page.context().storageState({ path: STORAGE_FILE });
-  }
+test('Buyer Login with Saved Session and Location', async () => {
+  const browser = await chromium.launch({ headless: false });
 
-  // Always inject mock location before navigation
+  const context = await browser.newContext({
+    geolocation: DEFAULT_LOCATION,
+    permissions: ['geolocation'],
+    storageState: fs.existsSync(STORAGE_FILE) ? STORAGE_FILE : undefined,
+  });
+
+  const page = await context.newPage();
+
+  console.log('🔹 Buyer session file exists:', fs.existsSync(STORAGE_FILE));
+
+  // Inject mock location into localStorage
   await page.addInitScript(() => {
     localStorage.setItem(
       'user-location-storage',
       JSON.stringify({
         state: {
-          coords: { lat: 24.8607, lng: 67.0011 }, // Karachi
+          coords: { lat: 24.8607, lng: 67.0011 },
           locationStateName: "Sindh",
           locationCountryName: "Pakistan"
         }
@@ -24,61 +33,73 @@ test('buyer login with saved session', async ({ page }) => {
     );
   });
 
-await page.goto('https://qabuyer.cybermart.com/', { waitUntil: 'domcontentloaded' });
+  // Navigate to buyer page
+  await page.goto(BUYER_URL, { waitUntil: 'domcontentloaded' });
+  await page.locator('header, main, #app').first().waitFor({ state: 'visible', timeout: 20000 });
 
-  // Check if already logged in (Login/Register replaced by buyer’s name)
-  const isLoggedIn = await page.getByRole('paragraph').filter({ hasText: 'Login / Register' }).count() === 0;
+  const cookies = await context.cookies();
+  console.log('🔹 Current cookies:', cookies);
 
-if (!isLoggedIn) {
-  const loginParagraph = page.getByRole('paragraph').filter({ hasText: 'Login / Register' });
-  const emailInput = page.getByRole('textbox', { name: 'Phone/Email *' });
+  // Check if buyer is already logged in
+  const isLoggedIn = await page.evaluate(() => !!localStorage.getItem('userProfileData'));
+  console.log('🔹 Is buyer already logged in?', isLoggedIn);
 
-  // Try clicking up to 3 times until email input is visible
-  for (let attempt = 1; attempt <= 4; attempt++) {
+  if (!isLoggedIn) {
+    console.log('🔹 Logging in buyer manually...');
+
+    const loginParagraph = page.getByRole('paragraph').filter({ hasText: 'Login / Register' });
     await loginParagraph.click();
-    try {
-      await expect(emailInput).toBeVisible({ timeout: 5000 });
-      break; // success, exit loop
-    } catch {
-      if (attempt === 4) throw new Error('Login modal did not appear after 3 attempts');
-      console.log(`⚠️ Attempt ${attempt} failed, retrying...`);
+
+    const emailInput = page.getByRole('textbox', { name: 'Phone/Email *' });
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      await loginParagraph.click();
+      try {
+        await expect(emailInput).toBeVisible({ timeout: 5000 });
+        break;
+      } catch {
+        if (attempt === 4) throw new Error('Login modal did not appear after 3 attempts');
+        console.log(`⚠️ Attempt ${attempt} failed, retrying...`);
+      }
     }
-  }
-  // Fill email
-  await emailInput.fill('alishba+11@cybermart.com');
+    await emailInput.fill('alishba+11@cybermart.com');
 
-  const continueButton = page.getByRole('button', { name: 'Continue' });
+    const continueButton = page.getByRole('button', { name: 'Continue' });
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      await continueButton.click();
+      try {
+        const passwordInput = page.getByTestId('password');
+        await expect(passwordInput).toBeVisible({ timeout: 5000 });
+        break;
+      } catch {
+        if (attempt === 4) throw new Error('Continue button did not proceed after 3 attempts');
+        console.log(`⚠️ Attempt ${attempt} to click Continue failed, retrying...`);
+      }
+    }
 
-// Try clicking up to 3 times until next element (password field) is visible
-for (let attempt = 1; attempt <= 4; attempt++) {
-  await continueButton.click();
-  try {
-    // Wait for password input to appear as indication that click worked
     const passwordInput = page.getByTestId('password');
-    await expect(passwordInput).toBeVisible({ timeout: 5000 });
-    break; // success, exit loop
-  } catch {
-    if (attempt === 4) throw new Error('Continue button did not proceed after 3 attempts');
-    console.log(`⚠️ Attempt ${attempt} to click Continue failed, retrying...`);
+    await passwordInput.fill('Alishba@321');
+
+    await page.getByRole('button', { name: 'Sign In' }).click();
+
+    // Wait for profile API
+    await page.waitForResponse(response =>
+      response.url() === PROFILE_API && response.status() === 200,
+      { timeout: 20000 }
+    );
+
+    await page.waitForTimeout(2000);
+    console.log('✅ Manual login completed');
+
+    // Save cookies + localStorage in Playwright storage state format
+    await context.storageState({ path: STORAGE_FILE });
+    console.log('💾 Storage state saved');
+  } else {
+    // Optional: wait for profile API if already logged in
+    await page.waitForResponse(response =>
+      response.url() === PROFILE_API && response.status() === 200,
+      { timeout: 20000 }
+    );
   }
-}
 
-  // ✅ Wait until password field is visible before filling
-  const passwordInput = page.getByTestId('password');
-  await expect(passwordInput).toBeVisible({ timeout: 10000 });
-  await passwordInput.fill('Alishba@321');
-
-  await page.getByRole('button', { name: 'Sign In' }).click();
-
-  // Save new session
-  await page.context().storageState({ path: STORAGE_FILE });
-}
-
-
-  // Target only the header paragraph that might contain Login/Register
-const loginParagraph = page.getByRole('paragraph').filter({ hasText: 'Login / Register' });
-
-// Assert that this specific element is not visible
-await expect(loginParagraph).toHaveCount(0);
-
+  await browser.close();
 });
